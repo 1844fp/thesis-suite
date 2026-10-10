@@ -220,19 +220,42 @@ python tools\live_chain.py      # 真实模型跑完整链路（会花钱），�
 
 ## 八、部署到 Hugging Face Spaces
 
-1. 把本目录推到 GitHub 仓库（本站开发环境没有 `git`，用 GitHub REST API 推送）。
-2. 在 Hugging Face 新建 Space，SDK 选 **Docker**，模板选 **Blank**。
-3. 把仓库连到 Space（或直接推同一份代码到 Space 的 git 远端）。
-4. Space 会读 `README.md` 顶部的 frontmatter（`sdk: docker` / `app_port: 7860`）
-   并执行 `Dockerfile`。
+### 方式一：一条命令（需要你的 HF write token）
 
-容器里**不需要配置任何模型密钥**——这是 BYOK 的意义所在。
+```powershell
+# 先做本地自检（不联网、不需要 token）
+python tools\push_hf.py --offline-check
+
+# 真部署：自动建 Space 并上传
+python tools\push_hf.py --token hf_你的write_token --space thesis-suite
+```
+
+脚本会打印公开地址 `https://<用户名>-<space名>.hf.space`。
+**token 不会写进任何文件**，用完即可作废。
+
+> 为什么不用 `huggingface_hub`：本机开发不用 `requirements.txt`（依赖是 vendored 的），
+> 为部署再装一套工具链不值得。工作区里已有 `requests`，脚本直接用 HF 的
+> commit API 提交，不引入新依赖。
+
+### 方式二：手工五步
+
+1. 在 <https://huggingface.co/new-space> 新建 Space：**SDK** 选 `Docker`，
+   **Docker template** 选 `Blank`。
+2. 把这个 GitHub 仓库的内容推到 Space 的 git 远端：
+   `https://huggingface.co/spaces/<用户名>/<space名>`（密码用 HF write token）。
+3. Space 会自动构建并启动。
+4. 打开 `https://<用户名>-<space名>.hf.space` 验证。
+5. 可选：在 Space 设置页填 `SUITE_CROSSREF_MAILTO` 等变量（见下表）。
+
+**两种方式都不需要配置任何模型密钥。** 站点是 BYOK 的：密钥由访客在页面右上角填入，
+只存在他自己的浏览器里，随请求头转发给模型服务商。
+
 可选环境变量：
 
 | 变量 | 用途 |
 |---|---|
 | `SUITE_CROSSREF_MAILTO` | Crossref 礼貌池邮箱，填了更不易被限流（非密钥） |
-| `SUITE_ALLOW_CUSTOM_BASE_URL` | 设为 `1` 允许访客自带任意接口地址 |
+| `SUITE_ALLOW_CUSTOM_BASE_URL` | 设为 `1` 允许访客自带任意接口地址；不设则只放行内置服务商（防 SSRF） |
 | `DSH_THESIS_DATA_DIR` | 数据目录，默认 `/app/data`（容器内是临时的） |
 
 **已知限制**：会话数据只存在内存里。免费档 Space 会休眠，
@@ -275,6 +298,12 @@ thesis-suite/
 │   └── topichelper_stage/core/ thesis-topic-helper，原样搬运
 ├── web/                        单页前端（原生 JS，无构建步骤）
 ├── tools/                      冒烟与真实链路测试
+│   ├── smoke_suite.py          端到端
+│   ├── smoke_gather.py         资料获取 50 项
+│   ├── smoke_byok.py           BYOK 防线（含 AST 静态校验）
+│   ├── live_chain.py           真实模型跑完整链路
+│   ├── push_github.py          无 git 环境下用 GitHub API 推仓库
+│   └── push_hf.py              部署到 Hugging Face Spaces
 ├── deploy/                     部署说明
 ├── Dockerfile                  HF Spaces 用
 └── requirements.txt            公网部署的依赖（本机不用它）
