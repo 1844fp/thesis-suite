@@ -1,0 +1,449 @@
+name: default
+school: 通用
+template_version: generic-1.0
+source: 通用学位论文格式规范（GB/T 7713 与多数高校规定的高频值）
+notes:
+- 这是一份可编辑的基线，不是任何一所学校的官方规范。
+- 拿到学校模板后，复制 rules_default.yaml 为 rules_<学校>.yaml，按红头文件改数值。
+- 字体/字号/行距/边距/缩进属于 OOXML 属性，纯文本算子改不了，一律 fixable=False。
+rules:
+- id: body_cjk_font
+  title: 正文中文字体
+  severity: major
+  scope: body
+  check: body_cjk_font
+  expected:
+    eastAsia: 宋体
+  tolerance: 0.0
+  params: {}
+  hint: 选中正文 → 开始 → 字体 → 中文字体设为宋体（不要用「宋体-方正超大字符集」这类别名）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: body_latin_font
+  title: 正文西文字体
+  severity: minor
+  scope: body
+  check: body_latin_font
+  expected:
+    ascii: Times New Roman
+  tolerance: 0.0
+  params: {}
+  hint: 中文字体设为宋体后，把西文字体单独设为 Times New Roman
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: body_font_size
+  title: 正文字号
+  severity: major
+  scope: body
+  check: body_font_size
+  expected: 12.0
+  tolerance: 0.01
+  params: {}
+  hint: 正文字号应为小四（12 磅）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: body_line_spacing
+  title: 正文行距
+  severity: major
+  scope: body
+  check: body_line_spacing
+  expected:
+    mode: multiple
+    value: 1.5
+  tolerance: 0.01
+  params: {}
+  hint: '段落 → 行距 → 1.5 倍行距（若学校要求固定值 22 磅，把 expected 改成 {mode: fixed, pt: 22}）'
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: body_first_line_indent
+  title: 正文首行缩进 2 字符
+  severity: major
+  scope: body
+  check: body_first_line_indent
+  expected:
+    chars: 2.0
+  tolerance: 0.05
+  params:
+    pt_per_char: 12.0
+  hint: 段落 → 特殊格式 → 首行缩进 → 2 字符（用「字符」单位，不要手填磅值）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: body_alignment
+  title: 正文两端对齐
+  severity: minor
+  scope: body
+  check: body_alignment
+  expected:
+    align: justify
+  tolerance: 0.0
+  params: {}
+  hint: 段落 → 对齐方式 → 两端对齐（正文用左对齐会让右边界参差，多数学校明确要求两端对齐）
+  fixable: false
+  fix_op: ''
+  # **默认关闭**：Word 的默认对齐就是"左对齐"，也就是"段落里没有 w:jc"。
+  # 开着它，几乎每一篇稿子都会因为没有显式写 w:jc 而被逐段报成 minor 偏差
+  # ——一堆噪声会把真正要紧的字体/字号问题淹掉。误报比漏报更能毁掉工具可信度，
+  # 所以这一条默认只作为**可选项**存在。
+  # 学校明确要求"正文两端对齐"时，把这里改成 true：检查会开始报，
+  # 排版写回也会跟着改（写回只动 enabled 的规则，两者开关一致）。
+  enabled: false
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: h1_cjk_font
+  title: 一级标题字体
+  severity: major
+  scope: heading1
+  check: heading_cjk_font
+  expected:
+    eastAsia: 黑体
+  tolerance: 0.0
+  params: {}
+  hint: 章标题中文字体应为黑体
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: h1_font_size
+  title: 一级标题字号
+  severity: major
+  scope: heading1
+  check: heading_font_size
+  expected: 16.0
+  tolerance: 0.01
+  params: {}
+  hint: 章标题字号应为三号（16 磅）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: h1_bold
+  title: 一级标题加粗
+  severity: minor
+  scope: heading1
+  check: heading_bold
+  expected: true
+  tolerance: 0.0
+  params: {}
+  hint: 章标题应加粗（黑体本身较粗，若学校模板不加粗则把本规则 enabled 设为 false）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: h1_alignment
+  title: 一级标题对齐
+  severity: minor
+  scope: heading1
+  check: heading_alignment
+  expected:
+  - center
+  - left
+  tolerance: 0.0
+  params: {}
+  hint: 章标题通常居中；左对齐也常见，按学校模板定
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: h1_spacing
+  title: 一级标题段前段后间距
+  severity: info
+  scope: heading1
+  check: heading_spacing
+  expected:
+    before_pt: 12.0
+    after_pt: 12.0
+  tolerance: 1.0
+  params: {}
+  hint: 章标题段前段后各 12 磅（0.5 行）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: h2_cjk_font
+  title: 二级标题字体
+  severity: minor
+  scope: heading2
+  check: heading_cjk_font
+  expected:
+    eastAsia: 黑体
+  tolerance: 0.0
+  params: {}
+  hint: 节标题中文字体应为黑体
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: h2_font_size
+  title: 二级标题字号
+  severity: minor
+  scope: heading2
+  check: heading_font_size
+  expected: 14.0
+  tolerance: 0.01
+  params: {}
+  hint: 节标题字号应为四号（14 磅）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: h2_bold
+  title: 二级标题加粗
+  severity: minor
+  scope: heading2
+  check: heading_bold
+  expected: true
+  tolerance: 0.0
+  params: {}
+  hint: 节标题应加粗
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: page_size
+  title: 纸张大小
+  severity: major
+  scope: section
+  check: page_size
+  expected:
+    width_cm: 21.0
+    height_cm: 29.7
+    name: A4
+  tolerance: 0.2
+  params: {}
+  hint: 页面布局 → 纸张大小 → A4
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: page_margin
+  title: 页边距与页眉页脚距离
+  severity: major
+  scope: section
+  check: page_margin
+  expected:
+    top_cm: 2.5
+    bottom_cm: 2.5
+    left_cm: 3.0
+    right_cm: 2.5
+    header_cm: 1.5
+    footer_cm: 1.75
+  tolerance: 0.1
+  params: {}
+  hint: 页面布局 → 页边距 → 自定义边距；左 3.0cm 是为装订留的，别改成 2.5
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: doc_default_font
+  title: 文档默认字体字号
+  severity: minor
+  scope: section
+  check: page_default_font
+  expected:
+    eastAsia: 宋体
+    ascii: Times New Roman
+    size_pt: 12.0
+  tolerance: 0.01
+  params: {}
+  hint: 样式 → 管理样式 → 默认；默认值错了会导致新敲的段落全是错的
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: caption_font_size
+  title: 图表题注字号
+  severity: minor
+  scope: caption
+  check: caption_font_size
+  expected: 10.5
+  tolerance: 0.01
+  params: {}
+  hint: 题注字号应为五号（10.5 磅）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: caption_number_format
+  title: 题注编号格式
+  severity: minor
+  scope: caption
+  check: caption_number_format
+  expected:
+    pattern: ^(图|表)\s*\d+[-–—.]\d+
+  tolerance: 0.0
+  params: {}
+  hint: 题注编号应形如「图 2-1」「表 3-2」（章号-序号），不要用「图 1」「图一」
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: caption_position
+  title: 图题在图下方
+  severity: minor
+  scope: figure_caption
+  check: caption_position
+  expected:
+    figure_below_image: true
+  tolerance: 0.0
+  params: {}
+  hint: 图题放在图的下面；表题放在表的上面（表题用不着这条规则，但方向别记反）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: figure_caption_present
+  title: 有图必须有题注
+  severity: major
+  scope: figure_caption
+  check: figure_caption_present
+  expected: null
+  tolerance: 0.0
+  params: {}
+  hint: 每张图下面都要有编号题注，缺图号是评审必挑的
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: reference_number_style
+  title: 参考文献编号形态
+  severity: minor
+  scope: reference
+  check: reference_number_style
+  expected: bracket
+  tolerance: 0.0
+  params: {}
+  hint: 参考文献条目用 [1] [2] 方括号编号，并与正文引用一一对应
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: reference_entry_fields
+  title: 参考文献条目完整性
+  severity: major
+  scope: reference
+  check: reference_entry_fields
+  expected:
+    require_year: true
+    require_author: true
+  tolerance: 0.0
+  params: {}
+  hint: 每条参考文献都要有作者与年份；缺字段的条目要回原文核对补全
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: punct_halfwidth_in_cjk
+  title: 中文语境使用半角标点
+  severity: minor
+  scope: body
+  check: punct_mixed
+  expected:
+    ，: ','
+    ；: ;
+    ：: ':'
+    ！: '!'
+    ？: '?'
+  tolerance: 0.0
+  params: {}
+  hint: 中文语境里的逗号/分号/冒号/叹号/问号用全角
+  fixable: true
+  fix_op: normalize_punctuation
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: punct_straight_quotes
+  title: 中文语境使用英文直引号
+  severity: minor
+  scope: paragraph
+  check: punct_quotes
+  expected: null
+  tolerance: 0.0
+  params: {}
+  hint: 中文里的引号用「“”」全角弯引号
+  fixable: true
+  fix_op: normalize_punctuation
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: space_between_cjk
+  title: 中文之间存在多余空格
+  severity: minor
+  scope: paragraph
+  check: cjk_space_cjk
+  expected: null
+  tolerance: 0.0
+  params: {}
+  hint: 删除中文之间的空格
+  fixable: true
+  fix_op: replace_span
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: space_cjk_latin_missing
+  title: 中英文之间缺空格
+  severity: minor
+  scope: paragraph
+  check: cjk_latin_spacing
+  expected: null
+  tolerance: 0.0
+  params:
+    exclude_before:
+    - 第
+    - 图
+    - 表
+    - 式
+    - 节
+    - 章
+    - 附录
+    - 共
+  hint: 中英文之间加一个半角空格（例外：「第3章」「图2-1」这类不加）
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: trailing_space
+  title: 段落末尾多余空格
+  severity: info
+  scope: paragraph
+  check: trailing_space
+  expected: null
+  tolerance: 0.0
+  params: {}
+  hint: 删除行尾空格
+  fixable: true
+  fix_op: replace_span
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: empty_paragraph_run
+  title: 连续空段落
+  severity: info
+  scope: paragraph
+  check: empty_paragraph_run
+  expected:
+    max_consecutive: 1
+  tolerance: 0.0
+  params: {}
+  hint: 连续空段最多保留一个；多余的直接删
+  fixable: true
+  fix_op: delete_span
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）
+- id: manual_line_break
+  title: 用手动换行符代替分段
+  severity: minor
+  scope: paragraph
+  check: manual_line_break
+  expected: null
+  tolerance: 0.0
+  params: {}
+  hint: 把 Shift+Enter 的手动换行改成回车分段，否则该处不享受段落格式
+  fixable: false
+  fix_op: ''
+  enabled: true
+  source: 通用学位论文规范（可在 rules_default.yaml 上按学校改）

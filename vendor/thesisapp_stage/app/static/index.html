@@ -1,0 +1,1932 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>论文多智能体系统</title>
+<style>
+  /* 单文件、零外部依赖：这类本地工具不该为了一个图标去联网。 */
+  :root{
+    --bg:#0f1115; --bg2:#161a21; --bg3:#1d222b; --line:#2a313d;
+    --fg:#e6e9ef; --fg2:#a3adbd; --fg3:#6b7688;
+    --acc:#5b9dff; --acc2:#3d7ce0;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --info:#8b949e;
+    --blocker:#ff5c5c; --major:#e3a008; --minor:#58a6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--fg);height:100vh;display:flex;overflow:hidden}
+  button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--line);
+         background:var(--bg3);color:var(--fg);padding:6px 12px;transition:.15s}
+  button:hover:not(:disabled){border-color:var(--acc);color:#fff}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--acc2);border-color:var(--acc2);color:#fff}
+  button.primary:hover:not(:disabled){background:var(--acc)}
+  button.danger:hover:not(:disabled){border-color:var(--err);color:var(--err)}
+  input,textarea,select{font:inherit;background:var(--bg);color:var(--fg);
+      border:1px solid var(--line);border-radius:6px;padding:7px 10px;width:100%}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acc)}
+  textarea{resize:vertical;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+  a{color:var(--acc)}
+  code{background:var(--bg3);padding:1px 5px;border-radius:4px;font-size:12.5px}
+
+  /* ---- 侧栏 ---- */
+  aside{width:290px;flex:0 0 290px;background:var(--bg2);border-right:1px solid var(--line);
+        display:flex;flex-direction:column}
+  .brand{padding:14px 16px;border-bottom:1px solid var(--line)}
+  .brand h1{margin:0;font-size:15px;letter-spacing:.3px}
+  .brand .sub{color:var(--fg3);font-size:12px;margin-top:3px}
+  .side-sec{padding:10px 12px;border-bottom:1px solid var(--line)}
+  .side-sec h2{margin:0 0 8px;font-size:11.5px;color:var(--fg3);font-weight:600;
+       letter-spacing:.8px;text-transform:uppercase}
+  .plist{overflow-y:auto;flex:1}
+  .pitem{padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer;border-left:3px solid transparent}
+  .pitem:hover{background:var(--bg3)}
+  .pitem.on{background:var(--bg3);border-left-color:var(--acc)}
+  .pitem .t{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pitem .m{font-size:11.5px;color:var(--fg3);margin-top:2px;display:flex;gap:8px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+
+  /* ---- 主区 ---- */
+  main{flex:1;display:flex;flex-direction:column;min-width:0}
+  header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;
+         align-items:center;gap:14px;background:var(--bg2);flex-wrap:wrap}
+  header .title{font-size:15px;font-weight:600;flex:1;min-width:150px;
+       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badges{display:flex;gap:6px;flex-wrap:wrap}
+  .badge{font-size:11.5px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--fg2)}
+  .badge.b-blocker{background:rgba(255,92,92,.15);color:var(--blocker)}
+  .badge.b-major{background:rgba(227,160,8,.15);color:var(--major)}
+  .badge.b-minor{background:rgba(88,166,255,.15);color:var(--minor)}
+  .badge.b-fixed{background:rgba(63,185,80,.15);color:var(--ok)}
+  .badge.b-needs_author{background:rgba(210,153,34,.18);color:var(--warn)}
+  .tabs{display:flex;gap:2px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--bg2)}
+  .tab{padding:9px 15px;border:none;background:none;border-bottom:2px solid transparent;
+       color:var(--fg2);border-radius:0}
+  .tab:hover{color:var(--fg);border-color:transparent}
+  .tab.on{color:var(--fg);border-bottom-color:var(--acc)}
+  .panel{flex:1;overflow-y:auto;padding:18px;display:none}
+  .panel.on{display:block}
+
+  /* ---- 组件 ---- */
+  .card{background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:14px 16px;margin-bottom:12px}
+  .card h3{margin:0 0 10px;font-size:13.5px;color:var(--fg)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .row.between{justify-content:space-between}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .muted{color:var(--fg3);font-size:12.5px}
+  .empty{color:var(--fg3);text-align:center;padding:40px 20px}
+  label.f{display:block;margin-bottom:10px}
+  label.f span{display:block;font-size:12px;color:var(--fg2);margin-bottom:4px}
+
+  .issue{border:1px solid var(--line);border-left-width:3px;border-radius:8px;
+         padding:11px 14px;margin-bottom:9px;background:var(--bg2)}
+  .issue.blocker{border-left-color:var(--blocker)}
+  .issue.major{border-left-color:var(--major)}
+  .issue.minor{border-left-color:var(--minor)}
+  .issue.info{border-left-color:var(--info)}
+  .issue .ih{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:5px}
+  .issue .kind{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--fg2)}
+  .issue .msg{font-size:13.5px}
+  .issue .ev{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--fg2);
+       background:var(--bg);border-radius:5px;padding:6px 9px;margin-top:7px;
+       white-space:pre-wrap;word-break:break-all}
+  .issue .hint{font-size:12.5px;color:var(--fg2);margin-top:6px}
+  .issue .acts{margin-top:9px;display:flex;gap:7px;flex-wrap:wrap}
+  .issue button{padding:3px 10px;font-size:12px}
+  .pill{font-size:11px;padding:1px 7px;border-radius:9px;background:var(--bg3);color:var(--fg2)}
+  .pill.fix{background:rgba(63,185,80,.15);color:var(--ok)}
+  .pill.human{background:rgba(210,153,34,.15);color:var(--warn)}
+  .pill.done{background:rgba(63,185,80,.15);color:var(--ok)}
+  .pill.wont{background:var(--bg3);color:var(--fg3)}
+
+  .stage{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .stage:last-child{border-bottom:none}
+  .stage .sn{width:76px;font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--fg2)}
+  .stage .sd{flex:1;font-size:12.5px;color:var(--fg2)}
+  .stage.run .sn{color:var(--acc)}
+  .stage.ok .sn{color:var(--ok)}
+  .stage.err .sn{color:var(--err)}
+
+  #log{background:#000;border:1px solid var(--line);border-radius:8px;padding:11px 13px;
+       font-family:ui-monospace,Consolas,monospace;font-size:12px;height:220px;
+       overflow-y:auto;white-space:pre-wrap;color:#9fb3c8;margin-top:12px}
+  #log .e{color:var(--err)}
+  #log .s{color:var(--ok)}
+  /* 写作工作台的日志：一次生成有几十条进度，矮了看不见历史 */
+  #wLog{background:#000;border:1px solid var(--line);border-radius:8px;padding:11px 13px;
+        font-family:ui-monospace,Consolas,monospace;font-size:12px;height:320px;
+        overflow-y:auto;white-space:pre-wrap;color:#9fb3c8}
+  #wLog .e{color:var(--err)}
+  #wLog .s{color:var(--ok)}
+  #wChapters label:hover{background:rgba(255,255,255,.03)}
+  #thPreview table td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+  #wChapters table td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+
+  .diff{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.55}
+  .diff .l{padding:1px 8px;white-space:pre-wrap;word-break:break-all;border-radius:3px}
+  .diff .add{background:rgba(63,185,80,.13);color:#79d18a}
+  .diff .del{background:rgba(248,81,73,.13);color:#ff9d97}
+  .diff .hunk{color:var(--fg3);margin-top:6px}
+  .draft{font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.85;
+         white-space:pre-wrap;word-break:break-word;background:var(--bg2);
+         border:1px solid var(--line);border-radius:8px;padding:16px;max-height:none}
+  .toast{position:fixed;right:20px;bottom:20px;background:var(--bg3);border:1px solid var(--line);
+         border-left:3px solid var(--acc);border-radius:7px;padding:11px 16px;font-size:13px;
+         max-width:420px;box-shadow:0 6px 24px rgba(0,0,0,.5);z-index:99;display:none;
+         white-space:pre-wrap}
+  .toast.err{border-left-color:var(--err)}
+  .toast.ok{border-left-color:var(--ok)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--fg3);font-weight:600}
+  .chart{height:7px;border-radius:4px;background:var(--bg3);overflow:hidden;margin-top:5px}
+  .chart i{display:block;height:100%;background:var(--acc)}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:12.5px}
+  .kv .k{color:var(--fg3)}
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand">
+    <h1>论文多智能体系统</h1>
+    <div class="sub" id="verLine">连接中…</div>
+  </div>
+
+  <div class="side-sec">
+    <h2>新建项目</h2>
+    <label class="f"><span>标题</span><input id="npTitle" placeholder="例如：数字化转型与企业韧性"></label>
+    <label class="f"><span>粘贴正文（可留空）</span>
+      <textarea id="npText" rows="3" placeholder="也可以先建空项目，再上传 .docx"></textarea></label>
+    <div class="row">
+      <button class="primary" style="flex:1" onclick="createProject()">建立项目</button>
+      <button onclick="document.getElementById('upFile').click()">上传 .docx</button>
+      <input type="file" id="upFile" accept=".docx,.txt,.md" style="display:none" onchange="uploadProject(this)">
+    </div>
+  </div>
+
+  <div class="side-sec" style="display:flex;justify-content:space-between;align-items:center">
+    <h2 style="margin:0">项目</h2>
+    <button style="padding:2px 9px;font-size:12px" onclick="loadAll()">刷新</button>
+  </div>
+  <div class="plist" id="plist"></div>
+</aside>
+
+<main>
+  <header>
+    <div class="title" id="hTitle">未选择项目</div>
+    <div class="badges" id="hBadges"></div>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-p="write">写作</button>
+    <button class="tab" data-p="kb">知识库</button>
+    <button class="tab" data-p="models">模型</button>
+    <button class="tab" data-p="run">运行</button>
+    <button class="tab" data-p="issues">问题</button>
+    <button class="tab" data-p="draft">稿件</button>
+    <button class="tab" data-p="history">版本</button>
+    <button class="tab" data-p="tools">工具</button>
+    <button class="tab" data-p="settings">设置</button>
+  </div>
+
+  <!-- ================= 写作工作台 ================= -->
+  <div class="panel on" id="p-write">
+    <div class="card">
+      <h3>写什么</h3>
+      <div class="muted" style="margin-bottom:10px">
+        填<b>题目</b>和<b>写作要求</b>就能开写；也可以上传一份<b>开题报告</b>，
+        系统会照着开题里已拟定的章节结构写。<b>不限于某个学科</b>——
+        论文类型决定章节骨架与检查口径。
+      </div>
+      <input id="wTopic" placeholder="论文题目，例如：乡村振兴背景下乡村教师专业发展路径研究"
+             style="width:100%;margin-bottom:8px">
+      <textarea id="wReq" rows="3"
+        placeholder="写作要求（可留空）。越具体越好，例如：&#10;· 采用问卷调查法，样本不少于 300 份，需要做信度与效度检验&#10;· 重点分析作用机制，不要停留在现象描述&#10;· 所有数字必须来自我提供的资料，不许编"></textarea>
+      <div class="row" style="gap:10px;margin-top:8px;flex-wrap:wrap">
+        <label class="row" style="gap:6px;width:auto">论文类型
+          <select id="wGenre" style="width:auto" onchange="applyGenre()"></select>
+        </label>
+        <label class="row" style="gap:6px;width:auto">学位
+          <select id="wDegree" style="width:auto">
+            <option>本科</option><option selected>硕士</option><option>博士</option>
+          </select>
+        </label>
+        <label class="row" style="gap:6px;width:auto">目标字数
+          <input type="number" id="wWords" value="35000" min="0" step="1000" style="width:100px">
+        </label>
+        <label class="row" style="gap:6px;width:auto">作者
+          <input id="wAuthor" placeholder="姓名（可留空）" style="width:120px">
+        </label>
+        <label class="row" style="gap:6px;width:auto">本次模型
+          <select id="wModel" style="width:auto"></select>
+        </label>
+      </div>
+      <div class="row" style="gap:10px;margin-top:10px;flex-wrap:wrap">
+        <input type="file" id="wProposal" accept=".docx,.txt,.md,.markdown" style="flex:1;min-width:200px">
+        <button id="btnParse" onclick="parseProposal()">解析开题报告</button>
+        <span class="muted" id="wProposalHint">上传开题报告可选；不传就用所选类型的默认章节结构</span>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="row between">
+          <h3 style="margin:0">章节</h3>
+          <div class="row" style="gap:6px">
+            <button onclick="selectAllChapters(true)">全选</button>
+            <button onclick="selectAllChapters(false)">全不选</button>
+          </div>
+        </div>
+        <div class="muted" style="margin:8px 0">
+          勾掉不想让系统写的章节（那几章你自己写，系统不会碰）。
+          勾选状态会作为"只写这几章"传给生成链路。
+        </div>
+        <div id="wChapters" class="muted">（先选论文类型，或解析一份开题报告）</div>
+      </div>
+
+      <div class="card">
+        <div class="row between">
+          <h3 style="margin:0">知识库预检</h3>
+          <button class="primary" id="btnPre" onclick="doPrecheck()">预检（不花钱）</button>
+        </div>
+        <div class="muted" style="margin:8px 0">
+          <b>先预检再生成。</b>如果本地知识库里没有这个选题的材料，
+          生成会产出"引用着无关文献"的稿子——预检会在花钱之前把这件事告诉你。
+        </div>
+        <div id="wPreOut" class="muted">还没有预检。</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="gap:10px;flex-wrap:wrap">
+        <button class="primary" id="btnWrite" onclick="startWrite()" style="font-size:14px;padding:9px 18px">
+          ▶ 开始写作
+        </button>
+        <button id="btnWriteStop" onclick="stopWrite()" disabled>中断</button>
+        <label class="row" style="gap:6px;width:auto">
+          <input type="checkbox" id="wPrecheck" checked style="width:auto"> 生成前自动预检
+        </label>
+        <label class="row" style="gap:6px;width:auto">
+          <input type="checkbox" id="wDedup" style="width:auto"> 附加降 AIGC
+        </label>
+        <label class="row" style="gap:6px;width:auto">
+          <input type="checkbox" id="wLlmVerify" style="width:auto"> 含模型检查器
+        </label>
+        <label class="row" style="gap:6px;width:auto">
+          <input type="checkbox" id="wForce" style="width:auto"> 预检不通过也强行生成
+        </label>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        <b>系统不会写的东西</b>：创新点、致谢，以及需要你拍板的结论措辞
+        （结论只依据已写正文汇总，并整章标记为「待你逐条确认」）。
+      </div>
+    </div>
+
+    <div class="card" id="wRunCard" style="display:none">
+      <h3>生成进度</h3>
+      <div id="wLog"></div>
+      <div id="wOut" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- ================= 知识库 ================= -->
+  <div class="panel" id="p-kb">
+    <div class="card">
+      <div class="row between">
+        <h3 style="margin:0">本地知识库</h3>
+        <div class="row" style="gap:6px">
+          <button onclick="kbLoadAll()">刷新</button>
+          <button onclick="kbIngest()">触发入库</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        写作时检索的就是这个库。库里没有的选题，系统<b>不会</b>用无关文献凑——
+        它会明确告诉你写不了。所以换选题前先在这里投料。
+      </div>
+      <div id="kbStatus" style="margin-top:10px"></div>
+      <div class="row" style="gap:10px;margin-top:12px;flex-wrap:wrap">
+        <input type="file" id="kbFiles" multiple accept=".pdf,.docx,.txt,.md" style="flex:1;min-width:220px">
+        <button class="primary" onclick="kbUpload()">投料并入库</button>
+      </div>
+      <div class="muted" style="margin-top:6px">
+        支持 PDF / DOCX / TXT / MD。扫描版 PDF 需先做 OCR；.caj / .nh 需先转 PDF。
+      </div>
+      <div id="kbAddOut" style="margin-top:10px"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="row between">
+          <h3 style="margin:0">试查</h3>
+          <label class="row" style="gap:6px;width:auto">
+            <input type="checkbox" id="kbRerank" style="width:auto"> 重排（会调用模型）
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="kbQuery" placeholder="例如：数据资产 估值 收益法" style="flex:1"
+                 onkeydown="if(event.key==='Enter')kbSearch()">
+          <button onclick="kbSearch()">检索</button>
+        </div>
+        <div id="kbSearchOut" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <h3>按题目预检</h3>
+        <div class="muted" style="margin-bottom:8px">
+          用你的题目去库里检索并判相关，零成本。判定"不相关"就别急着生成。
+        </div>
+        <div class="row">
+          <input id="kbTopic" placeholder="你的论文题目" style="flex:1"
+                 onkeydown="if(event.key==='Enter')kbCheck()">
+          <button class="primary" onclick="kbCheck()">预检</button>
+        </div>
+        <div id="kbCheckOut" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row between">
+        <h3 style="margin:0">馆藏</h3>
+        <input id="kbFilter" placeholder="按题名/作者过滤" style="width:220px"
+               oninput="kbRenderDocs()">
+      </div>
+      <div id="kbDocs" style="margin-top:10px" class="muted">正在读取…</div>
+    </div>
+  </div>
+
+  <!-- ================= 运行 ================= -->
+  <div class="panel on" id="p-run">
+    <div class="card">
+      <h3>运行流水线</h3>
+      <div class="muted" style="margin-bottom:10px">
+        勾选要跑的阶段。<b>验证</b>与<b>问题修复</b>不调用模型也能做大部分工作；
+        写作与降 AIGC 需要模型。
+      </div>
+      <div id="stageBox" class="grid3"></div>
+      <div class="row" style="margin-top:12px">
+        <label class="row" style="gap:6px;width:auto">
+          <input type="checkbox" id="ckLlmVerify" checked style="width:auto"> 含模型检查器
+        </label>
+        <label class="row" style="gap:6px;width:auto">
+          <input type="checkbox" id="ckDry" style="width:auto"> 试运行（不改稿件）
+        </label>
+        <label class="row" style="gap:6px;width:auto">
+          自我更正轮数 <input type="number" id="inRounds" value="3" min="1" max="6" style="width:66px">
+        </label>
+        <button class="primary" id="btnRun" onclick="startRun()">开始运行</button>
+        <button id="btnStop" onclick="stopRun()" disabled>中断</button>
+      </div>
+      <div id="stageView" style="margin-top:16px"></div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <!-- ================= 问题 ================= -->
+  <div class="panel" id="p-issues">
+    <div class="card">
+      <div class="row between">
+        <h3 style="margin:0">问题清单</h3>
+        <div class="row" style="gap:6px">
+          <select id="fStatus" onchange="loadIssues()" style="width:auto">
+            <option value="">全部状态</option>
+            <option value="open">未处理</option>
+            <option value="needs_author">待人工</option>
+            <option value="fixed">已修复</option>
+            <option value="wontfix">已忽略</option>
+          </select>
+          <select id="fSev" onchange="loadIssues()" style="width:auto">
+            <option value="">全部严重度</option>
+            <option value="blocker">致命</option>
+            <option value="major">重要</option>
+            <option value="minor">轻微</option>
+            <option value="info">提示</option>
+          </select>
+          <button onclick="exportIssues()">导出清单</button>
+          <button class="primary" onclick="loadReview()">生成审稿意见书</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        <b>待人工</b>的问题需要你自己判断——工具不会替你改写学术论断。
+        确认处理完或决定不处理后，点对应按钮标记，流程才算收尾。
+      </div>
+    </div>
+    <div class="card" id="reviewCard" style="display:none">
+      <div class="row between">
+        <h3 style="margin:0">模拟审稿意见书</h3>
+        <div class="row" style="gap:6px">
+          <button onclick="downloadReview()">下载 .md</button>
+          <button onclick="$('reviewCard').style.display='none'">收起</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:6px">
+        按审稿人的读法把问题组织成五个维度。<b>评分与提交建议由问题数量换算</b>，
+        不是模型打的印象分。它不判断贡献够不够新——那是人类审稿人的事。
+      </div>
+      <div class="draft" id="reviewText" style="margin-top:10px;max-height:520px">正在生成…</div>
+    </div>
+    <div id="issueList"></div>
+  </div>
+
+  <!-- ================= 稿件 ================= -->
+  <div class="panel" id="p-draft">
+    <div class="card">
+      <div class="row between">
+        <h3 style="margin:0">当前稿件</h3>
+        <div class="row" style="gap:6px">
+          <button onclick="loadDraft()">刷新</button>
+          <button onclick="exportDraft()">导出 .txt</button>
+          <button onclick="exportDocx()">导出 .docx</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>按我的要求改写</h3>
+      <div class="muted" style="margin-bottom:8px">
+        选一个章节，或粘贴一段原文，然后写清楚要改什么。
+        改写<b>只依据知识库里的证据</b>，改完产生新版本（可在「版本」页签对比回退）。
+        结论与创新点不会被改写。
+      </div>
+      <div class="row" style="gap:10px;flex-wrap:wrap">
+        <label class="row" style="gap:6px;width:auto">目标
+          <select id="rwMode" style="width:auto" onchange="rwModeChanged()">
+            <option value="section">整个章节</option>
+            <option value="find">一段原文</option>
+          </select>
+        </label>
+        <select id="rwSection" style="flex:1;min-width:200px"></select>
+        <input id="rwFind" placeholder="粘贴要改写的那一段原文（逐字复制）"
+               style="flex:1;min-width:240px;display:none">
+      </div>
+      <textarea id="rwInstruction" rows="3" style="margin-top:8px"
+        placeholder="改写要求，越具体越好。例如：&#10;· 把这一节的机制分析补实，用检索到的文献支撑，不要只描述现象&#10;· 这一段没有依据，改写成有出处的表述，或直接删掉无依据的断言&#10;· 语气太满，改成与证据强度相称的说法"></textarea>
+      <div class="row" style="gap:10px;margin-top:8px;flex-wrap:wrap">
+        <button class="primary" id="btnRw" onclick="doRewrite()">改写</button>
+        <label class="row" style="gap:6px;width:auto">
+          <input type="checkbox" id="rwExport" checked style="width:auto"> 改完自动重新导出 .docx
+        </label>
+      </div>
+      <div id="rwOut" style="margin-top:10px"></div>
+    </div>
+
+    <div class="draft" id="draftText">（未选择项目）</div>
+  </div>
+
+  <!-- ================= 模型 ================= -->
+  <div class="panel" id="p-models">
+    <div class="card">
+      <div class="row between">
+        <h3 style="margin:0">模型接入</h3>
+        <div class="row" style="gap:6px">
+          <button onclick="loadModels()">刷新</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        一次生成要调用几十次模型。<b>按用途分开配</b>：起草正文用最强的模型，
+        核验与自动修复用便宜的——成本能降下来而正文质量不受影响。<br>
+        各家接口都兼容 OpenAI 协议，选一个预设、填个密钥就能用；本地 Ollama / vLLM 也可以接。
+      </div>
+      <div id="mdStatus" style="margin-top:10px"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>添加 / 修改档案</h3>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+          <select id="mdPreset" style="flex:1;min-width:180px" onchange="applyPreset()"></select>
+          <button onclick="applyPreset(true)">套用预设</button>
+        </div>
+        <div class="muted" id="mdPresetNote" style="margin-top:6px"></div>
+        <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+          <input id="mdId" placeholder="档案名（英文，如 deepseek-cheap）" style="flex:1;min-width:160px">
+          <input id="mdLabel" placeholder="显示名（可留空）" style="flex:1;min-width:140px">
+        </div>
+        <input id="mdBase" placeholder="API 地址，如 https://api.deepseek.com/v1"
+               style="width:100%;margin-top:8px">
+        <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+          <input id="mdModel" placeholder="模型名，如 deepseek-chat" style="flex:1;min-width:160px">
+          <input id="mdKey" type="password" placeholder="API Key" style="flex:1;min-width:160px">
+        </div>
+        <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+          <label class="row" style="gap:6px;width:auto">温度
+            <input type="number" id="mdTemp" value="0.2" step="0.1" min="0" max="2" style="width:70px">
+          </label>
+          <label class="row" style="gap:6px;width:auto">max_tokens
+            <input type="number" id="mdMax" value="4096" step="256" min="256" style="width:90px">
+          </label>
+          <label class="row" style="gap:6px;width:auto">超时(s)
+            <input type="number" id="mdTimeout" value="300" step="30" min="10" style="width:80px">
+          </label>
+        </div>
+        <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button onclick="saveProfile(false)">保存</button>
+          <button onclick="testAdhoc()">先测一下</button>
+          <button class="primary" onclick="saveProfile(true)">保存并设为当前</button>
+        </div>
+        <div class="muted" style="margin-top:6px">
+          编辑已有档案时 Id 要对上；密钥留空表示沿用原值（改地址不用重填密钥）。
+        </div>
+        <div id="mdOut" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <h3>按用途分配</h3>
+        <div class="muted" style="margin-top:8px">
+          留空 = 用当前激活的档案。想让核验和修复走便宜模型，在这里选一个便宜的档案。
+        </div>
+        <div id="mdRoles" style="margin-top:10px"></div>
+        <button class="primary" style="margin-top:10px" onclick="saveRoles()">保存用途分配</button>
+        <div id="mdRoleOut" style="margin-top:10px"></div>
+        <div class="muted" style="margin-top:10px">
+          当前实际路由：
+          <div id="mdRouting" style="margin-top:6px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row between">
+        <h3 style="margin:0">已配置的档案</h3>
+        <button onclick="testAllProfiles()">逐个测试全部</button>
+      </div>
+      <div id="mdProfiles" class="muted" style="margin-top:8px">正在读取…</div>
+      <div id="mdAllOut" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- ================= 版本 ================= -->
+  <div class="panel" id="p-history">
+    <div class="card">
+      <h3>版本链</h3>
+      <div class="muted" style="margin-bottom:10px">
+        每次自动或手工修改都产生新版本，可随时回退对照。选两个版本看差异。
+      </div>
+      <div id="versionList"></div>
+      <div class="row" style="margin-top:12px">
+        <label class="row" style="gap:6px;width:auto">从 v<input type="number" id="dA" value="1" style="width:60px"></label>
+        <label class="row" style="gap:6px;width:auto">到 v<input type="number" id="dB" value="0" style="width:60px"></label>
+        <button onclick="loadDiff()">比较</button>
+        <span class="muted">（到 v 填 0 表示最新版）</span>
+      </div>
+    </div>
+    <div class="card"><div class="diff" id="diffView"><span class="muted">尚未比较。</span></div></div>
+  </div>
+
+  <!-- ================= 工具 ================= -->
+  <div class="panel" id="p-tools">
+    <div class="grid2">
+      <div class="card">
+        <h3>AI 味体检</h3>
+        <div class="muted" style="margin-bottom:9px">本地风格指标，不调用模型、不花钱。数值与商用检测器不可换算。</div>
+        <textarea id="scoreText" rows="6" placeholder="粘贴要体检的文字…"></textarea>
+        <button class="primary" style="margin-top:9px" onclick="doScore()">体检</button>
+        <div id="scoreOut" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <h3>参考文献真实性核验</h3>
+        <div class="muted" style="margin-bottom:9px">
+          查 Crossref / OpenAlex。<b>这是唯一能抓出"引了一篇不存在的文献"的办法。</b>
+          查不到不等于造假（中文文献收录有限），但值得核实。
+        </div>
+        <textarea id="refText" rows="6" placeholder="粘贴参考文献列表，例如：&#10;[1] 张三. 某研究[J]. 某期刊, 2020.&#10;[2] Vaswani A, et al. Attention is all you need. NeurIPS, 2017."></textarea>
+        <button class="primary" style="margin-top:9px" onclick="doVerifyRefs()">核验</button>
+        <div id="refOut" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <h3>知识库检索</h3>
+        <div class="muted" style="margin-bottom:9px">纯检索不调用模型，可放心反复试查询词。</div>
+        <div class="row">
+          <input id="searchQ" placeholder="例如：双重差分 平行趋势检验" style="flex:1" onkeydown="if(event.key==='Enter')doSearch()">
+          <button onclick="doSearch()">检索</button>
+        </div>
+        <div id="searchOut" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <h3>论文排版整理（正文小四宋体、1.5 倍行距…）</h3>
+        <div class="muted" style="margin-bottom:9px">
+          把字体/字号/行距/缩进/对齐/页边距<b>写回</b>已有的 .docx。
+          三条硬保证：<b>文字一字未改</b>（逐字比对段落+表格+页眉页脚）、改完能重新打开、失败自动还原备份。
+          标题按段落的<b>大纲级别</b>识别（手工排版的标题也算），表格与页眉页脚<b>不动</b>。
+        </div>
+        <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">
+          <input type="file" id="fmtFile" accept=".docx" style="flex:1;min-width:200px">
+          <button class="primary" onclick="doFormat(false)">整理并下载</button>
+          <button onclick="doFormat(true)">先看差距</button>
+        </div>
+        <div class="grid3" style="margin-top:9px">
+          <label class="f"><span>正文字号（磅，小四=12）</span><input id="fmtSize" type="number" step="0.5" placeholder="12"></label>
+          <label class="f"><span>行距</span>
+            <select id="fmtLine">
+              <option value="">按规范（1.5 倍）</option>
+              <option value="1.0">单倍</option>
+              <option value="1.25">1.25 倍</option>
+              <option value="1.5">1.5 倍</option>
+              <option value="2.0">2 倍</option>
+              <option value="fixed:22">固定值 22 磅</option>
+              <option value="fixed:20">固定值 20 磅</option>
+            </select>
+          </label>
+          <label class="f"><span>首行缩进（字符）</span><input id="fmtIndent" type="number" step="0.5" placeholder="2"></label>
+        </div>
+        <div class="grid3" style="margin-top:9px">
+          <label class="f"><span>正文中文字体</span><input id="fmtFont" placeholder="宋体"></label>
+          <label class="f"><span>西文字体</span><input id="fmtLatin" placeholder="Times New Roman"></label>
+          <label class="f"><span>正文对齐</span>
+            <select id="fmtAlign">
+              <option value="">不改（默认，保持原样）</option>
+              <option value="both">两端对齐</option>
+              <option value="left">左对齐</option>
+            </select>
+          </label>
+        </div>
+        <div class="grid3" style="margin-top:9px">
+          <label class="f"><span>一级标题字体</span><input id="fmtH1" placeholder="黑体"></label>
+          <label class="f"><span>一级标题字号（三号=16）</span><input id="fmtH1Size" type="number" step="0.5" placeholder="16"></label>
+          <label class="f"><span>页边距 top,left,bottom,right（厘米）</span><input id="fmtMargin" placeholder="2.5,3,2.5,2.5"></label>
+        </div>
+        <div class="muted" style="margin-top:8px">
+          留空 = 用 <code>app/format/rules_default.yaml</code> 里的值（通用规范基线，不是某校官方规定）。
+          手上若有学校模板，改用命令行 <code>docx-format --like 模板.docx</code> 最省事。
+        </div>
+        <div id="fmtOut" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <h3>资料目录</h3>
+        <div class="muted" style="margin-bottom:9px">把 PDF 放进 <code>inbox\</code>，资料获取阶段会自动入库。</div>
+        <div id="inboxOut"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 设置 ================= -->
+  <div class="panel" id="p-settings">
+    <div class="card">
+      <h3>生成模型</h3>
+      <div id="llmHint" class="muted" style="margin-bottom:10px"></div>
+      <div class="grid2">
+        <label class="f"><span>服务地址（OpenAI 兼容）</span><input id="sBase" placeholder="https://api.deepseek.com/v1"></label>
+        <label class="f"><span>模型名</span><input id="sModel" placeholder="deepseek-chat"></label>
+      </div>
+      <label class="f"><span>API Key（留空表示不修改已保存的密钥）</span>
+        <input id="sKey" type="password" placeholder="sk-..."></label>
+      <div class="grid3">
+        <label class="f"><span>temperature</span><input id="sTemp" type="number" step="0.1" min="0" max="2"></label>
+        <label class="f"><span>max_tokens</span><input id="sMax" type="number" min="256"></label>
+        <label class="f"><span>自我更正轮数上限</span><input id="sRounds" type="number" min="1" max="6"></label>
+      </div>
+      <div class="row">
+        <button class="primary" onclick="saveConfig()">保存并生效</button>
+        <button onclick="testConfig()">测试连接</button>
+        <span id="cfgOut" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>对端服务</h3>
+      <div class="muted" style="margin-bottom:10px">
+        本系统不重写这两个项目的能力，只调用它们。它们没启动时，对应功能会明确报错，其余功能照常。
+      </div>
+      <div class="grid2">
+        <label class="f"><span>论文 RAG 知识库</span><input id="sRag" placeholder="http://127.0.0.1:8760"></label>
+        <label class="f"><span>降 AIGC 工作台</span><input id="sRed" placeholder="http://127.0.0.1:8770"></label>
+      </div>
+      <div id="peerOut"></div>
+    </div>
+
+    <div class="card">
+      <h3>外部核验</h3>
+      <label class="row" style="gap:8px;width:auto;margin-bottom:10px">
+        <input type="checkbox" id="sExt" style="width:auto"> 启用 Crossref / OpenAlex 核验
+      </label>
+      <div class="grid2">
+        <label class="f"><span>联系邮箱（Crossref 礼貌池，建议填）</span><input id="sMail" placeholder="you@example.com"></label>
+        <label class="f"><span>单次最多核验条数</span><input id="sLookups" type="number" min="1" max="300"></label>
+      </div>
+      <div class="row"><button class="primary" onclick="saveConfig()">保存并生效</button></div>
+    </div>
+
+    <div class="card">
+      <h3>能力清单</h3>
+      <div id="agentOut"></div>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let CUR = null;          // 当前项目数据
+let JOBS = {};           // project_id -> {started, stages, ok}
+let RUNNER = null;       // 当前 EventSource
+let ALL_STAGES = ["gather","retrieve","draft","verify","fix","dedup","format","final"];
+const STAGE_CN = {gather:"资料获取",retrieve:"证据检索",draft:"写作",verify:"验证",
+                  fix:"自我更正",dedup:"降 AIGC",format:"格式整理",final:"收尾"};
+const STAGE_LLM = {draft:1, dedup:1};   // 这些阶段必须配模型
+
+function toast(msg, kind){
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "toast show " + (kind||"");
+  t.style.display = "block";
+  clearTimeout(t._t);
+  t._t = setTimeout(()=> t.style.display = "none", kind==="err" ? 12000 : 5000);
+}
+async function api(path, opt){
+  const r = await fetch(path, Object.assign({headers:{"Content-Type":"application/json"}}, opt||{}));
+  const txt = await r.text();
+  let data; try{ data = txt ? JSON.parse(txt) : {}; }catch(e){ data = {detail: txt.slice(0,400)}; }
+  if(!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
+  return data;
+}
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function sevBadge(k,v){ return `<span class="badge b-${k}">${v}</span>`; }
+
+/* ---------------- 加载 ---------------- */
+async function loadAll(){
+  try{
+    const st = await api("/api/status");
+    $("verLine").textContent = `v${st.settings.server ? "0.1.0" : "0.1.0"} · ${st.agents.length} 智能体 · ${st.registry.verifiers.length} 检查器`;
+    const bad = st.peers.filter(p=>!p.reachable);
+    $("verLine").textContent += bad.length ? ` · ${bad.length} 个服务离线` : " · 服务正常";
+    $("verLine").style.color = bad.length ? "var(--warn)" : "var(--fg3)";
+    renderAgents(st); renderSettings(st.settings); renderPeers(st.peers);
+  }catch(e){
+    $("verLine").textContent = "无法连接服务：" + e.message;
+    $("verLine").style.color = "var(--err)";
+  }
+  try{
+    const d = await api("/api/projects");
+    renderProjects(d.projects);
+  }catch(e){ /* 状态接口已报错，不重复提示 */ }
+  loadInbox();
+}
+
+function renderProjects(ps){
+  const el = $("plist");
+  if(!ps.length){ el.innerHTML = '<div class="empty">还没有项目<br><span class="muted">在左侧建立，或上传 .docx</span></div>'; return; }
+  el.innerHTML = ps.map(p=>{
+    const running = JOBS[p.id];
+    const dot = p.issues_open ? (running?"var(--acc)":"var(--warn)") : "var(--ok)";
+    return `<div class="pitem${CUR&&CUR.id===p.id?" on":""}" onclick="selectProject('${p.id}')">
+      <div class="t"><span class="dot" style="background:${dot}"></span> ${esc(p.title||p.id)}</div>
+      <div class="m"><span>${STAGE_CN[p.stage]||p.stage}</span><span>${p.chars} 字</span>
+        <span>${p.issues_open} 待处理</span><span>${p.artifacts} 工件</span></div>
+    </div>`;
+  }).join("");
+}
+
+async function selectProject(pid){
+  try{
+    CUR = await api("/api/projects/" + pid);
+    $("hTitle").textContent = CUR.title || pid;
+    renderHeaderBadges();
+    document.querySelectorAll(".pitem").forEach(e=>e.classList.remove("on"));
+    await loadIssues(); loadDraft(); loadVersions();
+    renderStageBox();
+  }catch(e){ toast("载入项目失败：" + e.message, "err"); }
+}
+
+function renderHeaderBadges(){
+  const s = CUR.severity || {};
+  const parts = [];
+  if(s.blocker) parts.push(`<span class="badge b-blocker">致命 ${s.blocker}</span>`);
+  if(s.major)   parts.push(`<span class="badge b-major">重要 ${s.major}</span>`);
+  if(s.minor)   parts.push(`<span class="badge b-minor">轻微 ${s.minor}</span>`);
+  if(s.fixed)   parts.push(`<span class="badge b-fixed">已修复 ${s.fixed}</span>`);
+  if(s.needs_author) parts.push(`<span class="badge b-needs_author">待人工 ${s.needs_author}</span>`);
+  parts.push(`<span class="badge">${CUR.chars||0} 字 · v${(CUR.heads&&CUR.heads.draft)?(CUR.artifacts[CUR.heads.draft]||{}).version||1:0}</span>`);
+  $("hBadges").innerHTML = parts.join("");
+}
+
+/* ---------------- 项目 ---------------- */
+async function createProject(){
+  const title = $("npTitle").value.trim(), text = $("npText").value;
+  if(!title && !text.trim()) return toast("至少给个标题或正文", "err");
+  try{
+    const d = await api("/api/projects", {method:"POST", body: JSON.stringify({title, text})});
+    $("npTitle").value = ""; $("npText").value = "";
+    toast("项目已建立", "ok");
+    await loadAll(); selectProject(d.project.id);
+  }catch(e){ toast("建立失败：" + e.message, "err"); }
+}
+async function uploadProject(input){
+  const f = input.files[0]; if(!f) return;
+  const fd = new FormData(); fd.append("file", f);
+  const t = $("npTitle").value.trim(); if(t) fd.append("title", t);
+  toast("上传并解析中…");
+  try{
+    const r = await fetch("/api/projects/upload", {method:"POST", body: fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || ("HTTP "+r.status));
+    (d.project.intake_warnings||[]).forEach(w=>toast("收稿警告：" + w));
+    toast("已建立项目", "ok");
+    await loadAll(); selectProject(d.project.id);
+  }catch(e){ toast("上传失败：" + e.message, "err"); }
+  input.value = "";
+}
+
+/* ---------------- 运行 ---------------- */
+function renderStageBox(){
+  $("stageBox").innerHTML = ALL_STAGES.map(s=>`
+    <label class="row" style="gap:6px;width:auto">
+      <input type="checkbox" class="stg" value="${s}" ${s!=="final"?"checked":""} style="width:auto">
+      <span>${STAGE_CN[s]}${STAGE_LLM[s]?' <span class="muted">(需模型)</span>':""}</span>
+    </label>`).join("");
+}
+
+function startRun(){
+  if(!CUR) return toast("先选一个项目", "err");
+  const stages = [...document.querySelectorAll(".stg:checked")].map(e=>e.value);
+  if(!stages.length) return toast("至少选一个阶段", "err");
+  const rounds = $("inRounds").value, llm = $("ckLlmVerify").checked ? 1 : 0, dry = $("ckDry").checked ? 1 : 0;
+
+  $("log").innerHTML = ""; $("stageView").innerHTML = "";
+  $("btnRun").disabled = true; $("btnStop").disabled = false;
+  JOBS[CUR.id] = {stages};
+  // 只标记左侧为"运行中"，不重新拉取列表——拉取会打断刚建立的 SSE 连接语义。
+  document.querySelectorAll(".pitem").forEach(e=>{
+    if(e.getAttribute("onclick")?.includes(CUR.id)) e.style.opacity = ".6";
+  });
+
+  const url = `/api/projects/${CUR.id}/run/stream?stages=${stages.join(",")}&max_rounds=${rounds}&llm_verify=${llm}&dry_run=${dry}`;
+  RUNNER = new EventSource(url);
+  const t0 = Date.now();
+
+  RUNNER.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    if(d.type === "start"){
+      log("▶ 开始运行：" + d.stages.map(s=>STAGE_CN[s]||s).join(" → "), "s");
+    } else if(d.type === "progress"){
+      log((d.ratio>=0 ? `[${(d.ratio*100).toFixed(0).padStart(3)}%] ` : "      ") + d.message);
+    } else if(d.type === "result"){
+      renderResult(d.result, ((Date.now()-t0)/1000).toFixed(1));
+      log("✅ 运行结束", "s");
+      finishRun();
+    } else if(d.type === "error"){
+      log("❌ " + d.message, "e"); toast("运行出错：" + d.message, "err");
+      finishRun();
+    } else if(d.type === "done"){
+      finishRun();
+    }
+  };
+  RUNNER.onerror = () => {
+    // EventSource 在流正常结束时也会触发 error；只在"按钮仍处于禁用态"即确实
+    // 还在等待时提示，否则每次正常结束都会弹一条假警告。
+    if(RUNNER && $("btnRun").disabled){
+      log("⚠ 连接中断（服务是否还在运行？）", "e"); finishRun();
+    }
+  };
+}
+
+function stopRun(){
+  if(RUNNER){ RUNNER.close(); RUNNER = null; }
+  log("⏹ 已中断（已完成的部分已保存）", "e");
+  finishRun();
+}
+function finishRun(){
+  if(RUNNER){ RUNNER.close(); RUNNER = null; }
+  $("btnRun").disabled = false; $("btnStop").disabled = true;
+  document.querySelectorAll(".pitem").forEach(e=> e.style.opacity = "1");
+  if(CUR) delete JOBS[CUR.id];
+  loadAll(); if(CUR) selectProject(CUR.id);
+}
+function log(msg, cls){
+  const el = $("log");
+  const line = document.createElement("div");
+  if(cls) line.className = cls;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderResult(r, secs){
+  const rows = r.stages.map(s=>{
+    if(!s.ran) return `<div class="stage"><span class="sn">${s.stage}</span><span class="sd">跳过 · ${esc(s.reason)}</span></div>`;
+    const cls = s.ok ? "ok" : "err";
+    const mark = s.ok ? "✅" : "❌";
+    return `<div class="stage ${cls}"><span class="sn">${s.stage}</span>
+      <span class="sd">${mark} ${esc(s.summary||"")}</span>
+      <span class="muted">${s.seconds}s</span></div>`;
+  }).join("");
+  let extra = "";
+  if(r.self_correction && r.self_correction.rounds !== undefined){
+    const sc = r.self_correction;
+    extra += `<div class="card" style="margin-top:12px"><h3>自我更正</h3>
+      <div class="kv">
+        <div class="k">轮数</div><div>${sc.rounds}</div>
+        <div class="k">是否收敛</div><div>${sc.converged ? '<span style="color:var(--ok)">已收敛</span>' :
+          `<span style="color:var(--warn)">未完全收敛</span>（还有致命 ${sc.remaining_blockers}、重要 ${sc.remaining_majors}）`}</div>
+        <div class="k">已修复</div><div>${(sc.after&&sc.after.fixed)||0}</div>
+        <div class="k">需你判断</div><div>${sc.needs_author||0}</div>
+      </div>
+      ${sc.converged ? "" : '<div class="muted" style="margin-top:9px">未收敛不等于失败：这些是需要作者判断的问题，工具不会替你改写学术论断。</div>'}
+    </div>`;
+  }
+  if(r.ledger && r.ledger.calls){
+    const by = Object.entries(r.ledger.by_purpose||{}).map(([k,v])=>`${k} ${v.calls}次/${v.seconds}s`).join(" · ");
+    extra += `<div class="muted" style="margin-top:10px">模型调用 ${r.ledger.calls} 次，失败 ${r.ledger.failures}，合计 ${r.ledger.seconds}s
+      ${by? "（"+by+"）":""}</div>`;
+  }
+  $("stageView").innerHTML = `<div class="row between"><b>本次结果（${secs}s）</b></div>${rows}${extra}`;
+}
+
+/* ---------------- 问题 ---------------- */
+async function loadIssues(){
+  if(!CUR) return;
+  const st = $("fStatus").value, sv = $("fSev").value;
+  try{
+    const d = await api(`/api/projects/${CUR.id}/issues?status=${st}&severity=${sv}`);
+    renderIssues(d.issues);
+    CUR.severity = d.severity; renderHeaderBadges();
+  }catch(e){ $("issueList").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+function renderIssues(list){
+  if(!list.length){ $("issueList").innerHTML = '<div class="empty">没有符合条件的问题 🎉</div>'; return; }
+  $("issueList").innerHTML = list.map(i=>{
+    const pill = i.fixable ? `<span class="pill fix">可机械修复 · ${esc(i.fix_op)}</span>`
+                           : (i.status==="needs_author" ? '<span class="pill human">需你判断</span>' : "");
+    const state = i.status==="fixed" ? '<span class="pill done">已修复</span>'
+                : i.status==="wontfix" ? '<span class="pill wont">已忽略</span>'
+                : i.status==="needs_author" ? '<span class="pill human">待人工</span>'
+                : '<span class="pill">未处理</span>';
+    const by = i.detected_by ? `<span class="muted">${esc(i.detected_by)}</span>` : "";
+    const conf = (i.confidence!=null && i.confidence<1) ? `<span class="muted">置信 ${(i.confidence*100).toFixed(0)}%</span>` : "";
+    const acts = (i.status==="fixed"||i.status==="wontfix")
+      ? `<button onclick="decide('${i.id}','reopen')">重新打开</button>`
+      : `<button onclick="decide('${i.id}','resolved')">已处理</button>
+         <button onclick="decide('${i.id}','wontfix')">忽略</button>`;
+    return `<div class="issue ${i.severity}">
+      <div class="ih">
+        ${sevBadge(i.severity, i.severity)}
+        <span class="kind">${esc(i.kind)}</span>${state}${pill}${conf}${by}
+      </div>
+      <div class="msg">${esc(i.message)}</div>
+      ${i.evidence ? `<div class="ev">${esc(i.evidence.slice(0,400))}</div>` : ""}
+      ${i.fix_hint ? `<div class="hint">建议：${esc(i.fix_hint)}</div>` : ""}
+      ${i.resolution_note ? `<div class="hint">处置：${esc(i.resolution_note)}</div>` : ""}
+      <div class="muted" style="margin-top:6px;font-size:11.5px">定位：${esc(JSON.stringify(i.location))}</div>
+      <div class="acts">${acts}</div>
+    </div>`;
+  }).join("");
+}
+async function decide(iid, action){
+  try{
+    await api(`/api/projects/${CUR.id}/issues/${iid}`, {method:"POST", body: JSON.stringify({action})});
+    toast(action==="resolved"?"已标记为处理完成":action==="wontfix"?"已忽略":"已重新打开", "ok");
+    loadIssues(); loadAll();
+  }catch(e){ toast("操作失败：" + e.message, "err"); }
+}
+function exportIssues(){ if(CUR) window.open(`/api/projects/${CUR.id}/export?kind=issues&download=true`); }
+
+/* 模拟审稿意见书：把机器发现按审稿人的读法组织成五个维度。
+   评分与提交建议由后端按问题数量换算，不由模型打印象分。 */
+async function loadReview(){
+  if(!CUR) return toast("先选一个项目", "err");
+  $("reviewCard").style.display = "";
+  $("reviewText").textContent = "正在生成…";
+  try{
+    const d = await api(`/api/projects/${CUR.id}/review?open_only=true`);
+    $("reviewText").textContent = d.markdown || "（没有可汇总的问题）";
+  }catch(e){
+    $("reviewText").textContent = "生成失败：" + e.message;
+  }
+}
+function downloadReview(){ if(CUR) window.open(`/api/projects/${CUR.id}/review?open_only=true&download=true`); }
+
+/* ---------------- 稿件与版本 ---------------- */
+let DRAFT_TEXT = "";     // 当前稿件原文（改写页签要从它里面列章节）
+
+async function loadDraft(){
+  if(!CUR){ DRAFT_TEXT = ""; loadRewriteSections(); return; }
+  try{
+    const d = await api(`/api/projects/${CUR.id}/export?kind=draft`);
+    DRAFT_TEXT = d.text || "";
+    $("draftText").textContent = DRAFT_TEXT || "（稿件为空）";
+  }catch(e){ DRAFT_TEXT = ""; $("draftText").textContent = "载入失败：" + e.message; }
+  loadRewriteSections();
+}
+function exportDraft(){ if(CUR) window.open(`/api/projects/${CUR.id}/export?kind=draft&download=true`); }
+
+async function loadVersions(){
+  if(!CUR) return;
+  try{
+    const d = await api(`/api/projects/${CUR.id}/versions`);
+    if(!d.versions.length){ $("versionList").innerHTML = '<div class="muted">还没有版本。</div>'; return; }
+    const latest = Math.max(...d.versions.map(v=>v.version));
+    $("dB").value = latest; $("dA").value = d.versions.length>1 ? latest-1 : 1;
+    $("versionList").innerHTML = `<table><tr><th>版本</th><th>字数</th><th>由谁改</th><th>说明</th><th></th></tr>
+      ${d.versions.map(v=>`<tr>
+        <td>v${v.version}${v.version===latest?' <span class="pill done">最新</span>':''}</td>
+        <td>${v.chars}</td><td>${esc(v.created_by)}</td>
+        <td class="muted">${esc((v.notes||[]).join("；").slice(0,70))}</td>
+        <td><a href="/api/projects/${CUR.id}/export?kind=version&version=${v.version}&download=true">导出</a></td>
+      </tr>`).join("")}</table>`;
+  }catch(e){ $("versionList").innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
+}
+async function loadDiff(){
+  if(!CUR) return;
+  try{
+    const d = await api(`/api/projects/${CUR.id}/diff?a=${$("dA").value}&b=${$("dB").value}`);
+    $("diffView").innerHTML = `<div class="muted" style="margin-bottom:8px">v${d.a} → v${d.b}</div>` +
+      d.rows.map(r=>`<div class="l ${r.kind}">${esc(r.kind==="hunk"? r.text : (r.kind==="add"?"+ ":r.kind==="del"?"- ":"  ")+r.text)}</div>`).join("");
+  }catch(e){ $("diffView").innerHTML = `<span class="muted">${esc(e.message)}</span>`; }
+}
+
+/* ---------------- 工具 ---------------- */
+async function doScore(){
+  const text = $("scoreText").value;
+  if(!text.trim()) return toast("先粘贴文字", "err");
+  $("scoreOut").innerHTML = '<span class="muted">检查中…</span>';
+  try{
+    const d = await api("/api/tools/score", {method:"POST", body: JSON.stringify({text})});
+    const met = Object.entries(d.metrics||{}).map(([k,m])=>{
+      if(!m || typeof m!=="object") return "";
+      const susp = m.suspicion!=null? m.suspicion : m.score;
+      const pct = susp==null? 0 : Math.max(0,Math.min(1, susp))*100;
+      return `<div style="margin-bottom:8px"><div class="row between" style="font-size:12.5px">
+        <span>${esc(m.label||k)}</span><span class="muted">${susp==null?"—":susp.toFixed(2)}</span></div>
+        <div class="chart"><i style="width:${pct.toFixed(0)}%;background:${pct>70?"var(--err)":pct>40?"var(--warn)":"var(--ok)"}"></i></div></div>`;
+    }).join("");
+    $("scoreOut").innerHTML = `<div class="row between"><b style="font-size:19px">${d.index.toFixed(1)}</b>
+      <span class="muted">AI 味指数（越低越像人写的）</span></div>
+      <div class="muted" style="margin:6px 0 12px">命中规则 ${d.rule_hits} 条。这是本地风格指标，与知网等商用检测器数值不可换算。</div>${met}`;
+  }catch(e){ $("scoreOut").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`; }
+}
+
+async function doVerifyRefs(){
+  const text = $("refText").value;
+  if(!text.trim()) return toast("先粘贴参考文献", "err");
+  $("refOut").innerHTML = '<span class="muted">核验中（每条要查两个数据库，请稍候）…</span>';
+  try{
+    const d = await api("/api/tools/verify_references", {method:"POST", body: JSON.stringify({text})});
+    if(!d.ok) return $("refOut").innerHTML = `<span style="color:var(--warn)">${esc(d.error||"未执行")}</span>`;
+    const label = {confirmed:['确认存在','var(--ok)'], weak_match:['需人工确认','var(--warn)'],
+                   not_found:['查不到（疑似编造）','var(--err)'], inconclusive:['查询失败','var(--fg3)']};
+    const rows = (d.results||[]).map(r=>{
+      const [txt,col] = label[r.verdict] || [r.verdict,"var(--fg2)"];
+      const best = r.best||{};
+      return `<div class="issue ${r.verdict==="not_found"?"blocker":r.verdict==="weak_match"?"major":"info"}">
+        <div class="ih"><b style="color:${col}">${txt}</b>${r.index!=null?`<span class="kind">[${r.index}]</span>`:""}</div>
+        <div class="msg" style="font-size:12.5px">${esc(r.raw||"")}</div>
+        ${best.title?`<div class="hint">最相似：${esc(best.title)} ${best.year?`(${esc(best.year)})`:""} 相似度 ${best.score!=null?best.score.toFixed(2):"—"}${best.source?` · ${esc(best.source)}`:""}</div>`:""}
+        ${best.note?`<div class="hint">${esc(best.note)}</div>`:""}
+      </div>`;
+    }).join("");
+    $("refOut").innerHTML = `<div class="muted" style="margin-bottom:9px">
+      解析出 ${d.entries} 条，核验 ${d.checked} 条${d.skipped?`，因限额跳过 ${d.skipped} 条`:""} ·
+      ${Object.entries(d.summary||{}).map(([k,v])=>`${(label[k]||[k])[0]} ${v}`).join(" · ")}</div>${rows}`;
+  }catch(e){ $("refOut").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`; }
+}
+
+async function doSearch(){
+  const q = $("searchQ").value.trim();
+  if(!q) return;
+  $("searchOut").innerHTML = '<span class="muted">检索中…</span>';
+  try{
+    const d = await api("/api/tools/search", {method:"POST", body: JSON.stringify({query:q, k:8})});
+    if(!d.hits.length) return $("searchOut").innerHTML = '<span class="muted">没有命中。换个说法试试。</span>';
+    $("searchOut").innerHTML = d.hits.map(h=>`<div class="issue info">
+      <div class="ih"><span class="kind">[${h.index}]</span><span class="muted">${h.score.toFixed(3)}</span></div>
+      <div class="hint">${esc(h.citation)}</div>
+      <div class="ev">${esc(h.text.slice(0,320))}</div></div>`).join("");
+  }catch(e){ $("searchOut").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`; }
+}
+
+async function loadInbox(){
+  try{
+    const d = await api("/api/inbox");
+    $("inboxOut").innerHTML = `<div class="muted" style="margin-bottom:7px">${esc(d.dir)}</div>` +
+      (d.inbox.length ? d.inbox.map(f=>`<div class="row between" style="font-size:12.5px;padding:3px 0">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
+        <span class="muted">${(f.bytes/1024).toFixed(0)} KB</span></div>`).join("")
+        : '<span class="muted">空。把 PDF 拷进去，然后跑「资料获取」。</span>');
+  }catch(e){ $("inboxOut").innerHTML = `<span class="muted">${esc(e.message)}</span>`; }
+}
+
+/* ---------------- 排版整理 ---------------- */
+/* 下载必须走 fetch + blob：这个端点失败时返回的是 JSON 错误，
+   直接用 <a download> 或表单提交会把错误也当成文件下载下来，
+   用户得到一个打不开的 .docx 而看不到原因。
+   响应头 X-Format-Summary 里带着改前/改后的偏差数，避免再请求一次。 */
+async function doFormat(checkOnly){
+  const f = $("fmtFile").files[0];
+  if(!f) return $("fmtOut").innerHTML = '<span style="color:var(--err)">请先选一份 .docx</span>';
+  const fd = new FormData();
+  fd.append("file", f, f.name);
+  const v = id => ($(id).value||"").trim();
+  const num = id => v(id) ? Number(v(id)) : null;
+  if(v("fmtSize")) fd.append("body_size", v("fmtSize"));
+  if(v("fmtIndent")) fd.append("indent_chars", v("fmtIndent"));
+  if(v("fmtFont")) fd.append("body_font", v("fmtFont"));
+  if(v("fmtLatin")) fd.append("latin_font", v("fmtLatin"));
+  if(v("fmtAlign")) fd.append("align", v("fmtAlign"));
+  if(v("fmtH1")) fd.append("h1_font", v("fmtH1"));
+  if(v("fmtH1Size")) fd.append("h1_size", v("fmtH1Size"));
+  if(v("fmtMargin")) fd.append("margin", marginPairs(v("fmtMargin")));
+  const line = v("fmtLine");
+  if(line.startsWith("fixed:")) fd.append("line_fixed", line.slice(6));
+  else if(line) fd.append("line_spacing", line);
+  fd.append("check_only", checkOnly ? "true" : "false");
+
+  $("fmtOut").innerHTML = `<span class="muted">${checkOnly?"检查中":"整理中"}…（大文件要几秒）</span>`;
+  try{
+    const r = await fetch("/api/format/docx", {method:"POST", body: fd});
+    if(!r.ok){
+      let msg = "HTTP " + r.status;
+      try{ msg = (await r.json()).detail || msg; }catch(e){}
+      throw new Error(msg);
+    }
+    if(checkOnly){
+      const d = await r.json();
+      const kinds = Object.entries(d.kinds||{}).sort((a,b)=>b[1]-a[1]);
+      $("fmtOut").innerHTML = `<div class="issue info">
+        <div class="ih"><span class="kind">差距 ${d.total} 条</span></div>
+        <div class="hint">${kinds.map(([k,n])=>`${esc(k.replace("format.",""))} ${n}`).join(" · ")}</div>
+        <div class="muted" style="margin-top:6px">去掉「先看差距」直接点「整理并下载」就会把这些属性改过来。</div></div>`;
+      return;
+    }
+    const raw = r.headers.get("X-Format-Summary");
+    const info = raw ? JSON.parse(decodeURIComponent(raw)) : {};
+    const blob = await r.blob();
+    const name = (r.headers.get("Content-Disposition")||"").match(/filename="?([^"]+)"?/);
+    const outName = name ? decodeURIComponent(name[1]) : "排版整理.docx";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = outName; document.body.appendChild(a); a.click();
+    a.remove(); setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    $("fmtOut").innerHTML = `<div class="issue ok">
+      <div class="ih"><span class="kind">✅ 已下载 ${esc(outName)}</span></div>
+      <div class="hint">偏差 ${info.before} 条 → ${info.after} 条 ·
+        正文 ${info.body} 段 · 标题 ${info.headings} 个（识别到 ${info.headings_detected} 个）·
+        题注 ${info.captions} 个 · 处理 ${info.runs} 处文字</div>
+      <div class="muted" style="margin-top:6px">
+        ${info.text_unchanged?"✅ 文字一字未改（逐字比对通过）":"❌ 文字比对未通过（已还原备份）"} ·
+        ${info.reopened_ok?"✅ 改完能重新打开":"❌ 重新打开失败"}
+      </div>
+      ${(info.notes||[]).map(n=>`<div class="hint">· ${esc(n)}</div>`).join("")}</div>`;
+  }catch(e){
+    $("fmtOut").innerHTML = `<div class="issue major">
+      <div class="ih"><span class="kind">整理失败</span></div>
+      <div class="ev">${esc(e.message)}</div>
+      <div class="muted" style="margin-top:6px">原文件未被改动（失败会自动还原备份）。</div></div>`;
+  }
+}
+/* "2.5,3,2.5,2.5" → "top=2.5,left=3,bottom=2.5,right=2.5"（后端只认带名字的写法） */
+function marginPairs(s){
+  const keys = ["top","left","bottom","right"];
+  const parts = s.split(/[,，]/).map(x=>x.trim()).filter(Boolean);
+  if(parts.length === 1 && parts[0].includes("=")) return parts[0];
+  return parts.map((v,i)=> keys[i] ? `${keys[i]}=${v}` : "").filter(Boolean).join(",");
+}
+
+/* ---------------- 设置 ---------------- */
+function renderSettings(s){
+  $("sBase").value = s.llm.base_url; $("sModel").value = s.llm.model;
+  $("sTemp").value = s.llm.temperature; $("sMax").value = s.llm.max_tokens;
+  $("sRounds").value = s.pipeline.max_rounds;
+  $("sRag").value = s.peers.rag_base; $("sRed").value = s.peers.reducer_base;
+  $("sExt").checked = !!s.verify.external_enabled;
+  $("sMail").value = s.verify.contact_email || "";
+  $("sLookups").value = s.verify.max_external_lookups;
+  $("sKey").placeholder = s.llm.has_api_key ? `已保存 ${s.llm.api_key_masked}（留空表示不修改）` : "sk-...";
+  $("llmHint").innerHTML = s.llm.configured
+    ? `✅ 已配置（${esc(s.llm.api_key_masked)}）${s.llm.key_source?` · 来源：<code>${esc(s.llm.key_source)}</code>`:""}`
+    : "❌ 未配置 API Key。写作、修复、降 AIGC 需要它；验证与格式整理不需要。";
+}
+function renderPeers(peers){
+  $("peerOut").innerHTML = (peers||[]).map(p=>`<div class="stage ${p.reachable?"ok":"err"}">
+    <span class="sn">${p.reachable?"✅":"❌"}</span>
+    <span class="sd">${esc(p.name)} · <code>${esc(p.base_url)}</code></span>
+    <span class="muted">${p.reachable? p.seconds+"s" : esc((p.detail||"").slice(0,90))}</span></div>`).join("");
+}
+function renderAgents(st){
+  const missing = Object.entries(st.skipped||{});
+  const problems = Object.entries(st.agent_module_problems||{});
+  $("agentOut").innerHTML = `
+    <div class="muted" style="margin-bottom:9px">${st.agents.length} 个智能体 · ${st.registry.verifiers.length} 个检查器 · ${st.registry.fixers.length} 个修复算子</div>
+    <table><tr><th>智能体</th><th>需要模型</th><th>说明</th></tr>
+      ${st.agents.map(a=>`<tr><td><code>${esc(a.name)}</code></td>
+        <td>${a.uses_model?"是":"否"}</td><td class="muted">${esc(a.description)}</td></tr>`).join("")}
+    </table>
+    ${missing.length||problems.length ? `<div style="margin-top:12px">
+      <b style="color:var(--warn)">未装载的能力</b>
+      <div class="muted" style="margin-top:5px">这不影响其余功能，但下面这些确实不可用：</div>
+      <table>${missing.map(([k,v])=>`<tr><td><code>${esc(k)}</code></td><td class="muted">${esc(v)}</td></tr>`).join("")}
+      ${problems.map(([k,v])=>`<tr><td><code>${esc(k)}</code></td><td class="muted">${esc(v)}</td></tr>`).join("")}</table>
+    </div>` : '<div class="muted" style="margin-top:10px">✅ 全部能力已装载。</div>'}
+    <div style="margin-top:14px"><b>检查器</b>
+      <table>${st.registry.verifiers.map(v=>`<tr><td><code>${esc(v.name)}</code></td>
+        <td>${v.needs_llm?"需模型":"本地"}</td><td class="muted">${esc(v.description)}</td></tr>`).join("")}</table>
+    </div>`;
+}
+async function saveConfig(){
+  const body = {llm:{}, peers:{}, verify:{}, pipeline:{}};
+  body.llm.base_url = $("sBase").value.trim();
+  body.llm.model = $("sModel").value.trim();
+  body.llm.temperature = parseFloat($("sTemp").value);
+  body.llm.max_tokens = parseInt($("sMax").value, 10);
+  // 关键：只有用户真的输入了才发 api_key。发空串会清掉已保存的密钥。
+  const k = $("sKey").value;
+  if(k) body.llm.api_key = k;
+  body.peers.rag_base = $("sRag").value.trim();
+  body.peers.reducer_base = $("sRed").value.trim();
+  body.verify.external_enabled = $("sExt").checked;
+  body.verify.contact_email = $("sMail").value.trim();
+  body.verify.max_external_lookups = parseInt($("sLookups").value, 10);
+  body.pipeline.max_rounds = parseInt($("sRounds").value, 10);
+  $("cfgOut").textContent = "保存中…";
+  try{
+    const d = await api("/api/config", {method:"POST", body: JSON.stringify(body)});
+    $("sKey").value = "";
+    $("cfgOut").textContent = "已保存：" + d.saved.join("、");
+    toast("设置已保存并生效（无需重启）", "ok");
+    renderSettings(d.config); loadAll();
+  }catch(e){ $("cfgOut").textContent = "保存失败：" + e.message; toast("保存失败：" + e.message, "err"); }
+}
+async function testConfig(){
+  $("cfgOut").textContent = "测试中…";
+  try{
+    const d = await api("/api/config/test", {method:"POST", body: JSON.stringify({
+      base_url: $("sBase").value.trim(), model: $("sModel").value.trim(),
+      api_key: $("sKey").value || null
+    })});
+    $("cfgOut").textContent = d.ok ? `✅ 连接成功（${d.seconds}s，模型回显：${d.reply}）` : `❌ ${d.error}`;
+    toast(d.ok ? "模型连接正常" : ("连接失败：" + d.error), d.ok ? "ok" : "err");
+  }catch(e){ $("cfgOut").textContent = "❌ " + e.message; }
+}
+
+/* ---------------- 标签页 ---------------- */
+document.querySelectorAll(".tab").forEach(t=>{
+  t.onclick = () => {
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on"));
+    document.querySelectorAll(".panel").forEach(x=>x.classList.remove("on"));
+    t.classList.add("on");
+    $("p-" + t.dataset.p).classList.add("on");
+    if(t.dataset.p==="issues") loadIssues();
+    if(t.dataset.p==="draft") loadDraft();
+    if(t.dataset.p==="history") loadVersions();
+    if(t.dataset.p==="tools") loadInbox();
+    if(t.dataset.p==="kb") kbLoadAll();
+  };
+});
+
+/* =========================================================================
+   写作工作台
+   ========================================================================= */
+let WRITER = null;          // 当前生成的 EventSource
+let PROPOSAL_PATH = "";     // 已上传的开题报告路径
+let GENRES = [];            // 论文类型清单
+
+async function loadGenres(){
+  try{
+    const d = await api("/api/genres");
+    GENRES = d.genres || [];
+    $("wGenre").innerHTML = GENRES.map(g=>
+      `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("");
+    applyGenre();
+  }catch(e){ /* 类型清单拿不到不影响手填题目 */ }
+}
+
+function currentGenre(){
+  const id = $("wGenre").value;
+  return GENRES.find(g=>g.id===id) || null;
+}
+
+function applyGenre(){
+  const g = currentGenre();
+  if(!g) return;
+  if(!$("wWords").value || $("wWords").dataset.auto !== "0"){
+    $("wWords").value = g.suggested_words || 30000;
+  }
+  if(!PROPOSAL_PATH) renderChapters(g.sections || []);
+}
+
+function renderChapters(sections, checked){
+  const on = checked || {};
+  const rows = (sections||[]).map((s,i)=>{
+    const kids = (s.children||[]);
+    const isOn = on[s.title] === undefined ? true : !!on[s.title];
+    return `<label class="row" style="gap:8px;align-items:flex-start;padding:5px 0">
+      <input type="checkbox" class="wch" value="${esc(s.title)}" ${isOn?"checked":""} style="width:auto;margin-top:3px">
+      <span><b>${i+1}. ${esc(s.title)}</b>
+        ${kids.length?`<div class="muted" style="margin-top:2px">${kids.map(esc).join("　·　")}</div>`:""}
+      </span></label>`;
+  }).join("");
+  $("wChapters").innerHTML = rows || `<span class="muted">（没有章节）</span>`;
+  $("wChapters").className = "";
+}
+
+function selectAllChapters(on){
+  document.querySelectorAll(".wch").forEach(e=>e.checked = !!on);
+}
+
+function selectedChapters(){
+  return [...document.querySelectorAll(".wch:checked")].map(e=>e.value);
+}
+
+async function parseProposal(){
+  const f = $("wProposal").files[0];
+  if(!f) return toast("先选一份开题报告文件", "err");
+  $("btnParse").disabled = true;
+  try{
+    const fd = new FormData();
+    fd.append("file", f);
+    fd.append("title", $("wTopic").value.trim());
+    const r = await fetch("/api/thesis/proposal", {method:"POST", body: fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || "解析失败");
+    PROPOSAL_PATH = d.path;
+    const b = d.brief || {};
+    if(b.title && !$("wTopic").value.trim()) $("wTopic").value = b.title;
+    renderChapters(b.chapters || []);
+    const miss = (b.regions_missing||[]);
+    $("wProposalHint").innerHTML =
+      `✅ 已解析：<b>${(b.chapters||[]).length}</b> 章 · 研究方法 ${(b.methods||[]).length} 项 · ` +
+      `参考文献 ${b.reference_count||0} 条` +
+      (miss.length?`　⚠ 未识别栏目：${esc(miss.join("、"))}`:"");
+    if((b.innovations||[]).length){
+      $("wProposalHint").innerHTML +=
+        `<div style="margin-top:4px">开题里声明了 ${b.innovations.length} 条创新点，
+         已记录供你对照，<b>不参与生成</b>。</div>`;
+    }
+    toast(`开题解析完成：${(b.chapters||[]).length} 章`, "ok");
+  }catch(e){
+    toast("解析失败：" + e.message, "err");
+  }finally{
+    $("btnParse").disabled = false;
+  }
+}
+
+async function doPrecheck(){
+  const topic = $("wTopic").value.trim();
+  if(!topic) return toast("先填论文题目", "err");
+  $("btnPre").disabled = true;
+  $("wPreOut").innerHTML = "正在检索并判相关…";
+  try{
+    const d = await api("/api/kb/check", {method:"POST", body: JSON.stringify({
+      topic, requirement: $("wReq").value.trim()
+    })});
+    renderPrecheck($("wPreOut"), d);
+  }catch(e){
+    $("wPreOut").innerHTML = `<span style="color:var(--err)">预检失败：${esc(e.message)}</span>`;
+  }finally{
+    $("btnPre").disabled = false;
+  }
+}
+
+function renderPrecheck(el, d){
+  const cls = d.usable ? "b-ok" : "b-bad";
+  const color = d.usable ? "var(--ok)" : "var(--err)";
+  const titles = [];
+  (d.queries||[]).forEach(q=>(q.titles||[]).forEach(t=>{ if(!titles.includes(t)) titles.push(t); }));
+  el.innerHTML = `
+    <div><span class="badge ${cls}">${esc(d.verdict)}</span>
+      相关 <b>${d.relevant}</b>/${d.total} 条　占比 ${d.ratio}
+      　关键词：${esc((d.keywords||[]).join("、")||"—")}</div>
+    <div style="margin-top:8px;color:${color}">${esc(d.suggestion)}</div>
+    ${titles.length?`<details style="margin-top:8px"><summary class="muted">看到的文献（${titles.length} 篇）</summary>
+      <ul class="muted" style="margin:6px 0 0 18px">${titles.slice(0,20).map(t=>`<li>${esc(t)}</li>`).join("")}</ul>
+      </details>`:""}
+    ${(d.queries||[]).map(q=>`<div class="muted" style="margin-top:4px">
+        · 「${esc(q.query)}」命中 ${q.hits} 条，相关 ${q.relevant} 条 [${esc(q.level)}]</div>`).join("")}
+  `;
+}
+
+function startWrite(){
+  const topic = $("wTopic").value.trim();
+  if(!topic && !PROPOSAL_PATH) return toast("填一个题目，或上传一份开题报告", "err");
+  const chs = selectedChapters();
+  const all = [...document.querySelectorAll(".wch")].length;
+  if(all && !chs.length) return toast("至少要勾选一章", "err");
+
+  $("wLog").innerHTML = ""; $("wOut").innerHTML = "";
+  $("wRunCard").style.display = "";
+  $("btnWrite").disabled = true; $("btnWriteStop").disabled = false;
+
+  const skip = [...document.querySelectorAll(".wch:not(:checked)")].map(e=>e.value);
+  const q = new URLSearchParams({
+    proposal: PROPOSAL_PATH,
+    topic, title: $("wTopic").value.trim(),
+    author: $("wAuthor").value.trim(),
+    genre: $("wGenre").value,
+    requirement: $("wReq").value.trim(),
+    degree: $("wDegree").value,
+    words: $("wWords").value || "0",
+    skip_chapters: skip.join(","),
+    precheck: $("wPrecheck").checked ? "true" : "false",
+    force: $("wForce").checked ? "true" : "false",
+    dedup: $("wDedup").checked ? "true" : "false",
+    llm_verify: $("wLlmVerify").checked ? "true" : "false",
+    model: $("wModel") ? $("wModel").value : "",
+  });
+  WRITER = new EventSource("/api/thesis/stream?" + q.toString());
+  const t0 = Date.now();
+  WRITER.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    if(d.type === "start"){
+      wLog("▶ 开始写作（阶段：" + d.stages.join(" → ") + "）", "s");
+      wLog("　这一步会调用几十次模型，请勿关闭页面。", "");
+    } else if(d.type === "progress"){
+      wLog((d.ratio>=0 ? `[${(d.ratio*100).toFixed(0).padStart(3)}%] ` : "      ") + d.message);
+    } else if(d.type === "result"){
+      renderWriteResult(d.result, ((Date.now()-t0)/1000).toFixed(1));
+      stopWrite(true);
+    } else if(d.type === "error"){
+      wLog("❌ " + d.message, "e"); toast("生成出错：" + d.message, "err"); stopWrite(true);
+    }
+  };
+  WRITER.onerror = () => {
+    if(WRITER && $("btnWrite").disabled){
+      wLog("⚠ 连接中断（服务是否还在运行？）", "e"); stopWrite(true);
+    }
+  };
+}
+
+function stopWrite(silent){
+  if(WRITER){ WRITER.close(); WRITER = null; }
+  $("btnWrite").disabled = false; $("btnWriteStop").disabled = true;
+  if(!silent) wLog("⏹ 已中断。已生成的章节保留在项目里，可稍后接着写。", "e");
+  loadAll();
+}
+
+function wLog(msg, cls){
+  const line = document.createElement("div");
+  if(cls) line.className = cls;
+  line.textContent = msg;
+  const box = $("wLog");
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderWriteResult(r, secs){
+  if(r.blocked){
+    $("wOut").innerHTML = `
+      <div style="color:var(--err)"><b>⛔ 已停止：知识库预检未通过</b>（没有产生任何模型费用）</div>
+      <div style="margin-top:8px">${esc(r.blocked)}</div>
+      <div style="margin-top:10px"><b>下一步</b>
+        <ul class="muted" style="margin:6px 0 0 18px">${(r.next_steps||[]).map(s=>`<li>${esc(s)}</li>`).join("")}</ul>
+      </div>`;
+    return;
+  }
+  const cw = r.chapter_words || {};
+  const rows = Object.entries(cw).map(([k,v])=>`<tr><td>${esc(k)}</td><td style="text-align:right">${v}</td></tr>`).join("");
+  const sev = r.severity || {};
+  const ex = r.export || {};
+  const pre = r.precheck || {};
+  const dl = ex.path ? `
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+      <a class="tab" style="text-decoration:none" href="/api/thesis/file?path=${encodeURIComponent(ex.path)}">⬇ 下载论文初稿 .docx</a>
+      ${r.report_path?`<a class="tab" style="text-decoration:none" href="/api/thesis/file?path=${encodeURIComponent(r.report_path)}">⬇ 下载生成报告</a>`:""}
+      <button onclick="selectProject('${r.project_id}')">查看这个项目</button>
+    </div>` : "";
+  const fail = (r.stage_failures||[]).length
+    ? `<div class="muted" style="margin-top:8px">⚠ 失败的阶段：<b>${esc(r.stage_failures.join("、"))}</b>（已完成的章节不会丢，修好原因后重跑即可补齐）</div>`
+    : "";
+  $("wOut").innerHTML = `
+    <div><b>${r.ok?"✅ 生成完成":"⚠ 生成未完全成功"}</b>　耗时 ${secs}s　项目 <code>${esc(r.project_id)}</code></div>
+    <div class="muted" style="margin-top:6px">题目：${esc(r.title)}
+      ${r.brief && r.brief.genre_name ? `　类型：${esc(r.brief.genre_name)}` : ""}
+      　正文 <b>${Object.values(cw).reduce((a,b)=>a+b,0)}</b> 字（${Object.keys(cw).length} 章）</div>
+    ${pre.verdict?`<div class="muted" style="margin-top:4px">知识库预检：${esc(pre.verdict)}　相关 ${pre.relevant}/${pre.total}</div>`:""}
+    <table style="width:100%;border-collapse:collapse;margin-top:10px">${rows}</table>
+    <div class="muted" style="margin-top:10px">
+      问题：致命 ${sev.blocker||0} · 重要 ${sev.major||0} · 轻微 ${sev.minor||0} · 提示 ${sev.info||0}
+      　已自动修复 ${sev.fixed||0} · <b>待你处理 ${sev.needs_author||0}</b>
+    </div>
+    ${ex.path?`<div class="muted" style="margin-top:6px">导出：${esc(ex.path)}（${ex.paragraphs||0} 段 · 标题 ${ex.headings||0} 个 · 文献 ${ex.references||0} 条 · 待办标记 <b>${ex.pending_marks||0}</b> 处）</div>`:""}
+    ${fail}
+    ${dl}
+    ${(r.next_steps||[]).length?`<div style="margin-top:10px"><b>下一步</b><ul class="muted" style="margin:6px 0 0 18px">${r.next_steps.map(s=>`<li>${esc(s)}</li>`).join("")}</ul></div>`:""}
+  `;
+}
+
+/* =========================================================================
+   知识库
+   ========================================================================= */
+let KB_DOCS = [];
+
+async function kbLoadAll(){
+  try{
+    const s = await api("/api/kb/status");
+    const mark = s.reachable ? "✅" : "❌";
+    $("kbStatus").innerHTML = `
+      <div>${mark} 服务 <code>${esc(s.base_url)}</code>
+        ${s.reachable?`　馆藏 <b>${s.docs}</b> 篇 / ${s.chunks} 个片段`
+                      :`　<span style="color:var(--err)">连不上：${esc(s.error)}</span>`}</div>
+      <div class="muted" style="margin-top:4px">收料目录：<code>${esc(s.inbox)}</code>（${s.inbox_files} 个源文件）</div>
+      ${s.reachable?"":`<div class="muted" style="margin-top:4px">启动：<code>E:\\AI\\thesis-assistant\\run.cmd</code></div>`}`;
+  }catch(e){
+    $("kbStatus").innerHTML = `<span style="color:var(--err)">读取状态失败：${esc(e.message)}</span>`;
+  }
+  try{
+    const d = await api("/api/kb/docs");
+    KB_DOCS = d.docs || [];
+    if(!d.ok) $("kbDocs").innerHTML = `<span style="color:var(--err)">连不上知识库：${esc(d.error)}</span>`;
+    else kbRenderDocs();
+  }catch(e){
+    $("kbDocs").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`;
+  }
+}
+
+function kbRenderDocs(){
+  const q = ($("kbFilter").value||"").trim();
+  const rows = KB_DOCS.filter(d=>!q || (d.title||"").includes(q) || (d.author||"").includes(q));
+  if(!rows.length){ $("kbDocs").innerHTML = `<span class="muted">没有匹配的文献。</span>`; return; }
+  $("kbDocs").innerHTML = `
+    <div class="muted" style="margin-bottom:6px">共 ${rows.length} 篇</div>
+    <table style="width:100%;border-collapse:collapse">
+      ${rows.map(d=>`<tr>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap">${esc(d.year||"----")}</td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap">${esc(d.author||"佚名")}</td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${esc(d.title||"")}</td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap">${d.n_chunks||0} 块</td>
+      </tr>`).join("")}
+    </table>`;
+}
+
+async function kbSearch(){
+  const query = $("kbQuery").value.trim();
+  if(!query) return toast("填一个查询词", "err");
+  $("kbSearchOut").innerHTML = "检索中…";
+  try{
+    const d = await api("/api/kb/search", {method:"POST", body: JSON.stringify({
+      query, k: 8, rerank: $("kbRerank").checked
+    })});
+    if(!d.hits.length){ $("kbSearchOut").innerHTML = `<span class="muted">没有命中。</span>`; return; }
+    $("kbSearchOut").innerHTML = d.hits.map(h=>`
+      <div style="margin-bottom:10px">
+        <div class="muted">[${h.index}] ${esc(h.citation||"（来源未标注）")}　分数 ${h.score}</div>
+        <div style="margin-top:3px">${esc(h.text.slice(0,240))}…</div>
+      </div>`).join("");
+  }catch(e){
+    $("kbSearchOut").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`;
+  }
+}
+
+async function kbCheck(){
+  const topic = $("kbTopic").value.trim();
+  if(!topic) return toast("填一个题目", "err");
+  $("kbCheckOut").innerHTML = "检索并判相关中…";
+  try{
+    const d = await api("/api/kb/check", {method:"POST", body: JSON.stringify({topic})});
+    renderPrecheck($("kbCheckOut"), d);
+  }catch(e){
+    $("kbCheckOut").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`;
+  }
+}
+
+async function kbUpload(){
+  const files = $("kbFiles").files;
+  if(!files || !files.length) return toast("先选文件", "err");
+  $("kbAddOut").innerHTML = "上传并入库中…（大文件可能需要几分钟）";
+  try{
+    const fd = new FormData();
+    [...files].forEach(f=>fd.append("files", f));
+    const r = await fetch("/api/kb/add", {method:"POST", body: fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || "投料失败");
+    const ing = d.ingested || [];
+    const ok = ing.filter(x=>x.ok).length;
+    $("kbAddOut").innerHTML = `
+      <div>✅ 已投料 ${(d.copied||[]).length} 个文件${ing.length?`，入库成功 ${ok}/${ing.length}`:""}</div>
+      ${(d.skipped||[]).length?`<div class="muted" style="margin-top:6px">跳过：
+        <ul style="margin:4px 0 0 18px">${d.skipped.map(s=>`<li>${esc(s.reason)}</li>`).join("")}</ul></div>`:""}
+      ${d.ingest_error?`<div style="color:var(--err);margin-top:6px">${esc(d.ingest_error)}</div>`:""}`;
+    toast("投料完成", "ok");
+    kbLoadAll();
+  }catch(e){
+    $("kbAddOut").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`;
+  }
+}
+
+async function kbIngest(){
+  $("kbAddOut").innerHTML = "触发入库中…（视文件数量可能要几分钟）";
+  try{
+    const d = await api("/api/kb/ingest", {method:"POST", body: JSON.stringify({})});
+    $("kbAddOut").innerHTML = `<div>✅ 入库完成：成功 ${d.succeeded}/${d.total}</div>`;
+    kbLoadAll();
+  }catch(e){
+    $("kbAddOut").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`;
+  }
+}
+
+/* =========================================================================
+   改写
+   ========================================================================= */
+function rwModeChanged(){
+  const m = $("rwMode").value;
+  $("rwSection").style.display = m === "section" ? "" : "none";
+  $("rwFind").style.display = m === "find" ? "" : "none";
+}
+
+function loadRewriteSections(){
+  const sel = $("rwSection");
+  if(!CUR || !DRAFT_TEXT){
+    sel.innerHTML = `<option value="">（还没有稿件）</option>`;
+    return;
+  }
+  const heads = [];
+  DRAFT_TEXT.split("\n").forEach(ln=>{
+    const m = /^#\s+(.+?)\s*$/.exec(ln);
+    if(m) heads.push(m[1]);
+  });
+  sel.innerHTML = heads.map(h=>`<option value="${esc(h)}">${esc(h)}</option>`).join("")
+    || `<option value="">（稿件里没有章节标题）</option>`;
+}
+
+async function doRewrite(){
+  if(!CUR) return toast("先选一个项目", "err");
+  const instruction = $("rwInstruction").value.trim();
+  if(!instruction) return toast("写清楚要改什么", "err");
+  const mode = $("rwMode").value;
+  const target = mode === "section"
+    ? {section: $("rwSection").value}
+    : {find: $("rwFind").value.trim()};
+  if(mode === "find" && !target.find) return toast("粘贴要改写的那段原文", "err");
+  if(mode === "section" && !target.section) return toast("选一个章节", "err");
+
+  $("btnRw").disabled = true;
+  $("rwOut").innerHTML = "改写中…（这一步会调用几次模型，请等它返回）";
+  try{
+    const d = await api(`/api/projects/${CUR.id}/rewrite`, {method:"POST",
+      body: JSON.stringify({targets: [{...target, instruction}], export: $("rwExport").checked})});
+    const rw = d.rewrite || {};
+    const done = rw.data && rw.data.rewritten || [];
+    const failed = rw.data && rw.data.failed || [];
+    $("rwOut").innerHTML = `
+      <div>${rw.ok?"✅":"❌"} ${esc(rw.summary||"")}</div>
+      ${done.map(x=>`<div class="muted">· ${esc(x.section)}（${x.mode==="section"?"整章":"单段"}）
+        ${x.chars_before}→${x.chars_after} 字，保留角标 ${x.citations_kept} 处</div>`).join("")}
+      ${failed.map(x=>`<div class="muted">⏭ ${esc(String(x.target||"").slice(0,40))}：${esc(x.reason||"")}</div>`).join("")}
+      ${d.references?`<div class="muted">参考文献：${esc((d.references.data&&d.references.summary)||d.references.summary||"")}</div>`:""}`;
+    toast(rw.ok ? "改写完成" : "改写未成功", rw.ok ? "ok" : "err");
+    if(rw.ok){ await loadDraft(); await loadVersions(); }
+  }catch(e){
+    $("rwOut").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`;
+  }finally{
+    $("btnRw").disabled = false;
+  }
+}
+
+function exportDocx(){
+  if(!CUR) return toast("先选一个项目", "err");
+  window.open(`/api/projects/${CUR.id}/export_docx?download=true`);
+}
+
+/* =========================================================================
+   模型接入
+   ========================================================================= */
+let MODELS = {profiles: [], presets: [], roles: {}, role_defs: [], routing: []};
+
+async function loadModels(){
+  try{
+    const d = await api("/api/models");
+    MODELS = d;
+    if($("mdPreset").options.length !== (d.presets||[]).length){
+      $("mdPreset").innerHTML = `<option value="">— 选择厂商预设 —</option>` +
+        (d.presets||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.label)}</option>`).join("");
+    }
+    renderModelStatus(d);
+    renderModelProfiles(d);
+    renderModelRoles(d);
+  }catch(e){
+    $("mdStatus").innerHTML = `<span style="color:var(--err)">读取失败：${esc(e.message)}</span>`;
+  }
+}
+
+function renderModelStatus(d){
+  const act = (d.profiles||[]).find(p=>p.id===d.active);
+  $("mdStatus").innerHTML = `
+    <div>当前档案：<b>${esc(d.active_label || "（未配置）")}</b>
+      ${act?`　<code>${esc(act.model||"（缺模型名）")}</code> @ <code>${esc(act.base_url||"（缺地址）")}</code>`:""}</div>
+    ${(d.problems||[]).length?`<div style="color:var(--err);margin-top:6px">${d.problems.map(esc).join("<br>")}</div>`:""}
+    ${(d.role_warnings||[]).length?`<div style="color:var(--err);margin-top:6px">用途分配有问题：<br>${d.role_warnings.map(esc).join("<br>")}</div>`:""}
+    ${!(d.profiles||[]).length?`<div class="muted" style="margin-top:6px">
+       还没有配置模型档案。系统会继续用 .env 里的 LLM_* 单模型配置；
+       想在这里配，就选一个厂商预设然后点「套用预设」。</div>`:""}
+    <div class="muted" style="margin-top:6px">配置文件：<code>${esc(d.path||"")}</code></div>`;
+}
+
+function renderModelProfiles(d){
+  const rows = (d.profiles||[]);
+  if(!rows.length){ $("mdProfiles").innerHTML = `<span class="muted">（还没有档案）</span>`; return; }
+  $("mdProfiles").innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      ${rows.map(p=>`<tr>
+        <td style="padding:6px;border-bottom:1px solid var(--line);white-space:nowrap">
+          ${p.id===d.active?"★":"&nbsp;"} <b>${esc(p.label||p.id)}</b>
+          ${p.configured?"":`<span style="color:var(--warn,#d29922)">⚠ 未填全</span>`}
+        </td>
+        <td style="padding:6px;border-bottom:1px solid var(--line)">
+          <div>${esc(p.model||"（缺模型名）")}</div>
+          <div class="muted">${esc(p.base_url||"（缺地址）")}　密钥 ${esc(p.api_key_masked||"—")}</div>
+        </td>
+        <td style="padding:6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap">
+          <button onclick="editProfile('${esc(p.id)}')">编辑</button>
+          <button onclick="testProfile('${esc(p.id)}')">测试</button>
+          ${p.id===d.active?"":`<button onclick="useProfile('${esc(p.id)}')">设为当前</button>`}
+          <button onclick="removeProfile('${esc(p.id)}')">删除</button>
+        </td></tr>`).join("")}
+    </table>`;
+}
+
+function renderModelRoles(d){
+  const opts = (d.profiles||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.label||p.id)}</option>`).join("");
+  $("mdRoles").innerHTML = (d.role_defs||[]).map(r=>`
+    <div class="row" style="gap:8px;margin-bottom:6px;align-items:center">
+      <span style="width:74px"><b>${esc(r.id)}</b></span>
+      <select id="role_${esc(r.id)}" style="flex:1;min-width:150px">
+        <option value="">（用当前档案）</option>${opts}
+      </select>
+      <span class="muted" style="flex:1.2;min-width:130px">${esc(r.label)}</span>
+    </div>`).join("");
+  (d.role_defs||[]).forEach(r=>{
+    const sel = $("role_" + r.id);
+    if(sel) sel.value = (d.roles||{})[r.id] || "";
+  });
+  const routing = (d.routing||[]);
+  $("mdRouting").innerHTML = routing.map(r=>`
+    <div>· <b>${esc(r.role)}</b> → ${esc(r.profile_label||"（当前档案）")}
+      ${r.model?`<code>${esc(r.model)}</code>`:""}
+      ${r.explicit?"":`<span class="muted">（未单独配）</span>`}</div>`).join("");
+}
+
+function applyPreset(verbose){
+  const id = $("mdPreset").value;
+  const p = (MODELS.presets||[]).find(x=>x.id===id);
+  if(!p){ if(verbose) toast("先选一个厂商预设", "err"); return; }
+  if(!$("mdId").value.trim()) $("mdId").value = p.id;
+  if(!$("mdLabel").value.trim()) $("mdLabel").value = p.label;
+  $("mdBase").value = p.base_url || "";
+  $("mdModel").value = p.model || "";
+  $("mdPresetNote").textContent = p.note || "";
+  if(verbose) toast("已套用预设，填上密钥即可保存", "ok");
+}
+
+function editProfile(pid){
+  const p = (MODELS.profiles||[]).find(x=>x.id===pid);
+  if(!p) return;
+  $("mdId").value = p.id;
+  $("mdLabel").value = p.label || "";
+  $("mdBase").value = p.base_url || "";
+  $("mdModel").value = p.model || "";
+  $("mdTemp").value = p.temperature;
+  $("mdMax").value = p.max_tokens;
+  $("mdTimeout").value = p.timeout;
+  $("mdKey").value = "";   // 留空 = 沿用原密钥
+  $("mdPresetNote").textContent = "编辑中：密钥留空表示沿用原值。";
+  $("mdOut").innerHTML = "";
+}
+
+async function saveProfile(activate){
+  const id = $("mdId").value.trim();
+  if(!id) return toast("填一个档案名（英文，如 deepseek）", "err");
+  const body = {
+    id,
+    label: $("mdLabel").value.trim(),
+    base_url: $("mdBase").value.trim(),
+    model: $("mdModel").value.trim(),
+    temperature: parseFloat($("mdTemp").value || "0.2"),
+    max_tokens: parseInt($("mdMax").value || "4096", 10),
+    timeout: parseFloat($("mdTimeout").value || "300"),
+  };
+  const key = $("mdKey").value;
+  if(key.trim()) body.api_key = key.trim();   // 空白 = 不传 = 保留原密钥
+  $("mdOut").innerHTML = "保存中…";
+  try{
+    await api("/api/models/profile", {method:"POST", body: JSON.stringify(body)});
+    if(activate) await api("/api/models/active", {method:"POST", body: JSON.stringify({id})});
+    $("mdOut").innerHTML = `✅ 已保存${activate?"并设为当前":""}：<b>${esc(id)}</b>`;
+    toast("已保存", "ok");
+    await loadModels();
+    if(activate) loadWriteDefaults();
+  }catch(e){
+    $("mdOut").innerHTML = `<span style="color:var(--err)">保存失败：${esc(e.message)}</span>`;
+  }
+}
+
+async function testProfile(pid){
+  $("mdOut").innerHTML = `正在测试「${esc(pid)}」…（真实调用一次，几秒钟）`;
+  try{
+    const d = await api("/api/models/test", {method:"POST", body: JSON.stringify({id: pid})});
+    const r = d.result || {};
+    $("mdOut").innerHTML = r.ok
+      ? `✅ <b>${esc(pid)}</b> 连接成功（${r.seconds}s），模型回显：${esc(r.reply||"")}`
+      : `<span style="color:var(--err)">❌ <b>${esc(pid)}</b> 连接失败（${r.seconds}s）：${esc(r.error||"")}</span>
+         <div class="muted" style="margin-top:4px">常见原因：密钥错、模型名不存在、余额不足、网络不通、地址少/多了 /v1。</div>`;
+  }catch(e){
+    $("mdOut").innerHTML = `<span style="color:var(--err)">测试失败：${esc(e.message)}</span>`;
+  }
+}
+
+async function testAdhoc(){
+  const base_url = $("mdBase").value.trim(), model = $("mdModel").value.trim();
+  if(!base_url || !model) return toast("先填 API 地址和模型名", "err");
+  $("mdOut").innerHTML = "正在测试（真实调用一次）…";
+  try{
+    const d = await api("/api/models/test", {method:"POST", body: JSON.stringify({
+      base_url, model, api_key: $("mdKey").value.trim() || null, timeout: 30
+    })});
+    const r = d.result || {};
+    $("mdOut").innerHTML = r.ok
+      ? `✅ 连接成功（${r.seconds}s），模型回显：${esc(r.reply||"")}　—— 可以保存了`
+      : `<span style="color:var(--err)">❌ 连接失败（${r.seconds}s）：${esc(r.error||"")}</span>`;
+  }catch(e){
+    $("mdOut").innerHTML = `<span style="color:var(--err)">测试失败：${esc(e.message)}</span>`;
+  }
+}
+
+async function testAllProfiles(){
+  if(!(MODELS.profiles||[]).length) return toast("还没有配置档案", "err");
+  $("mdAllOut").innerHTML = `正在逐个测试 ${MODELS.profiles.length} 个档案（每个真发一次请求）…`;
+  try{
+    const d = await api("/api/models/test", {method:"POST", body: JSON.stringify({all: true, timeout: 30})});
+    const rows = d.results || [];
+    $("mdAllOut").innerHTML = `
+      <div>可用 <b>${rows.filter(r=>r.ok).length}</b>/${rows.length} 个</div>
+      <table style="width:100%;border-collapse:collapse;margin-top:6px">
+        ${rows.map(r=>`<tr>
+          <td style="padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap">
+            ${r.ok?"✅":"❌"} ${esc(r.label||r.id)}</td>
+          <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${esc(r.model||"")}</td>
+          <td style="padding:4px 6px;border-bottom:1px solid var(--line)">
+            ${r.ok?esc(r.reply||""):`<span style="color:var(--err)">${esc(r.error||"")}</span>`}</td>
+          <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right">${r.seconds||0}s</td>
+        </tr>`).join("")}
+      </table>`;
+    toast(`可用 ${rows.filter(r=>r.ok).length}/${rows.length} 个`, rows.every(r=>r.ok) ? "ok" : "err");
+  }catch(e){
+    $("mdAllOut").innerHTML = `<span style="color:var(--err)">测试失败：${esc(e.message)}</span>`;
+  }
+}
+
+async function useProfile(pid){  try{
+    await api("/api/models/active", {method:"POST", body: JSON.stringify({id: pid})});
+    toast("已切换当前档案", "ok");
+    await loadModels();
+  }catch(e){ toast("切换失败：" + e.message, "err"); }
+}
+
+async function removeProfile(pid){
+  if(!confirm(`删除模型档案「${pid}」？指向它的用途分配也会被清除。`)) return;
+  try{
+    await api(`/api/models/profile/${encodeURIComponent(pid)}`, {method:"DELETE"});
+    toast("已删除", "ok");
+    await loadModels();
+  }catch(e){ toast("删除失败：" + e.message, "err"); }
+}
+
+async function saveRoles(){
+  const roles = {};
+  (MODELS.role_defs||[]).forEach(r=>{
+    const sel = $("role_" + r.id);
+    if(sel) roles[r.id] = sel.value;
+  });
+  $("mdRoleOut").innerHTML = "保存中…";
+  try{
+    const d = await api("/api/models/roles", {method:"POST", body: JSON.stringify({roles})});
+    MODELS = {...MODELS, ...d.models, routing: d.routing};
+    renderModelRoutesOnly(d);
+    $("mdRoleOut").innerHTML = "✅ 已保存";
+    toast("用途分配已保存", "ok");
+    await loadModels();
+  }catch(e){
+    $("mdRoleOut").innerHTML = `<span style="color:var(--err)">保存失败：${esc(e.message)}</span>`;
+  }
+}
+
+function renderModelRoutesOnly(d){
+  const routing = d.routing || [];
+  $("mdRouting").innerHTML = routing.map(r=>`
+    <div>· <b>${esc(r.role)}</b> → ${esc(r.profile_label||"（当前档案）")}
+      ${r.model?`<code>${esc(r.model)}</code>`:""}</div>`).join("");
+}
+
+/* 写作页签顶部的"本次用哪个模型"下拉（可选） */
+async function loadWriteDefaults(){
+  try{
+    const d = await api("/api/models");
+    const sel = $("wModel");
+    if(!sel) return;
+    const rows = d.profiles || [];
+    sel.innerHTML = `<option value="">用按用途分配的模型（推荐）</option>` +
+      rows.map(p=>`<option value="${esc(p.id)}">${esc(p.label||p.id)}　${esc(p.model||"")}</option>`).join("");
+  }catch(e){ /* 模型面板拿不到不影响写作 */ }
+}
+
+loadGenres();
+loadModels();
+loadWriteDefaults();
+loadAll();
+setInterval(()=>{ if(!RUNNER) loadAll(); }, 20000);
+</script>
+</body>
+</html>

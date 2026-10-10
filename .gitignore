@@ -1,0 +1,19 @@
+# 密钥与本地状态
+.env
+.env.*
+!.env.example
+models.json
+data/
+exports/
+.cache/
+.tmp/
+*.log
+_scratch/
+__pycache__/
+*.py[cod]
+tools/_probe_*.py
+
+# 上游代码搬运进来时自带的本地配置，绝不能进仓库
+vendor/**/.env
+vendor/**/.env.*
+vendor/**/models.json
