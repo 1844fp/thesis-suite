@@ -182,22 +182,37 @@ X-LLM-Model:  模型名（可选）
 
 ```powershell
 cd E:\AI\thesis-suite
-.\run.cmd
+.\run.cmd --port 8878
 ```
 
-打开 <http://127.0.0.1:8848/>。`run.ps1` / `run.cmd` 会把工作区里 vendored 的
-第三方依赖（`E:\AI\aigc-reducer\libs` 等）追加进 `PYTHONPATH`——
+打开 <http://127.0.0.1:8878/>（默认端口是 8848，但它常被别的本地服务占用，
+见下面的端口说明）。
+
+> **`run.cmd` 为什么全是 ASCII 注释**：它最初带着中文注释，结果 cmd.exe 用 GBK
+> 解码 UTF-8 文件时把一个 `rem` 前缀吃掉了，于是 cmd 把注释当命令执行，
+> 报 `'...' is not recognized as an internal or external command`。
+> 现在中文逻辑全部放在 `run.ps1`（PowerShell 处理 UTF-8 没问题），
+> `run.cmd` 只负责找到并调用它。
+
+`run.ps1` / `run.cmd` 会把工作区里 vendored 的第三方依赖
+（`E:\AI\aigc-reducer\libs` 等）追加进 `PYTHONPATH`——
 本机没有把 FastAPI 装进 site-packages，沿用既有项目的做法避免重复安装。
 公网容器里依赖由 `pip install -r requirements.txt` 提供，这段追加是空操作。
+
+### 端口怎么选
+
+Windows 有一批**排除端口**，绑上去会报 `WinError 10013`（不是代码问题）。
+实测踩过：**8853、8890 都在排除段里**。另外 **8848 常被本地别的服务占用**。
+选 8878 这类冷门端口最省事；被占用时 `run.cmd` 会打印明确错误而不是静默失败。
 
 单独启动后端（便于接自己的前端）：
 
 ```powershell
 $env:PYTHONPATH = "E:\AI\thesis-suite;E:\AI\aigc-reducer\libs;E:\AI\thesis-assistant\libs"
-python -m uvicorn suite.api.app:create_app --factory --host 127.0.0.1 --port 8848
+python -m uvicorn suite.api.app:create_app --factory --host 127.0.0.1 --port 8878
 ```
 
-接口文档：<http://127.0.0.1:8848/api/docs>
+接口文档：<http://127.0.0.1:8878/api/docs>
 
 ---
 
