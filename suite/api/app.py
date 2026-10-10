@@ -74,6 +74,10 @@ def create_app() -> FastAPI:
             "sessions": STORE.count(),
             "packages": info["packages"],
             "suite_root": info["suite_root"],
+            # BYOK 的结构性保证要在运行态可自证：这两项由 suite/boot.py 的封印产生，
+            # 光写在注释里没法验证，所以如实透出到健康检查里。
+            "server_key_present": info.get("server_key_present"),
+            "key_fallback_neutralized": info.get("key_fallback_neutralized"),
         }
 
     @app.get("/api/capabilities", tags=["系统"])

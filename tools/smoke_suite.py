@@ -59,6 +59,11 @@ def main() -> int:
     check("health ok", health.get("ok") is True)
     for pkg, info in (health.get("packages") or {}).items():
         check(f"上游包 {pkg} 可导入", info.get("ok") is True, info.get("error", ""))
+    # 服务器密钥封印（BYOK 的结构性保证）：运行态必须能自证这一点。
+    check("服务器上不存在可被借用的密钥", health.get("server_key_present") is False,
+          f"server_key_present={health.get('server_key_present')}")
+    neutralized = health.get("key_fallback_neutralized") or []
+    check("回退路径已被中立化", len(neutralized) >= 2, str(neutralized))
     # 用 OpenAPI schema 枚举路由：比遍历 app.routes 可靠（后者在不同 FastAPI 版本里
     # 可能是 Mount / APIRoute 的混合，且带路径参数时 path 会是正则形式）。
     schema = client.get("/api/openapi.json").json()
