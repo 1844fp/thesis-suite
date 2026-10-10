@@ -30,6 +30,50 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 HF = "https://huggingface.co"
 
+#: 代理。**这一条是必须的，不是可选优化。**
+#:
+#: 实测环境：huggingface.co 直连会超时（12 秒无响应），但走本机代理
+#: ``127.0.0.1:7897`` 时 0.3 秒可达。开发机上 PowerShell 会自动用系统代理，
+#: 而 Python 的 requests **默认走环境变量**（HTTP_PROXY/HTTPS_PROXY），
+#: 环境变量没设时就是直连——于是部署会莫名其妙地卡死或超时。
+#: 之前 pip 失败也是同一个原因（没带代理），当时误判成"出网被禁"。
+#:
+#: 按顺序取第一个可用的：显式参数 > 环境变量 > 常见本地代理端口。
+PROXY_ENV_KEYS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")
+DEFAULT_PROXY_CANDIDATES = (
+    "http://127.0.0.1:7897",   # Clash 系默认混合端口（本机实测可用）
+    "http://127.0.0.1:7890",   # Clash 传统 HTTP 端口
+    "http://127.0.0.1:10809",  # v2rayN 默认
+    "http://127.0.0.1:1080",   # 通用 SOCKS/HTTP
+)
+
+
+def probe_proxy(session, candidates=None) -> str:
+    """探测哪个代理能连通 Hugging Face。返回可用的代理 URL，都不通则空串。
+
+    先试环境变量（用户可能已经配好），再逐个试常见本地端口。
+    每次探测都很短（6 秒），失败就换下一个——比让用户干等一个 300 秒超时好。
+    """
+    tried: list[str] = []
+    env_proxy = next((os.environ.get(k) for k in PROXY_ENV_KEYS if os.environ.get(k)), "")
+    ordered = ([env_proxy] if env_proxy else []) + list(candidates or DEFAULT_PROXY_CANDIDATES)
+
+    for proxy in ordered:
+        if not proxy or proxy in tried:
+            continue
+        tried.append(proxy)
+        try:
+            r = session.get(f"{HF}/api/whoami-v2", headers={"User-Agent": "probe"},
+                            proxies={"http": proxy, "https": proxy}, timeout=6)
+            # 401 也算"通了"——重点是 TCP/TLS 能到 HF，至于 token 对不对是下一步的事。
+            if r.status_code in (200, 401, 403):
+                print(f"代理可用：{proxy}（HTTP {r.status_code}）")
+                return proxy
+        except Exception:
+            print(f"  代理不可用：{proxy}")
+    return ""
+
+
 #: 与 push_github.py 保持同一口径的排除规则。
 SKIP_DIRS = {"__pycache__", "data", "exports", ".cache", ".tmp", ".git"}
 SKIP_NAMES = {".env", "models.json"}
@@ -130,6 +174,7 @@ def main() -> int:
     parser.add_argument("--token", default=os.environ.get("HF_TOKEN", ""))
     parser.add_argument("--space", default="thesis-suite", help="Space 名称")
     parser.add_argument("--private", action="store_true")
+    parser.add_argument("--proxy", default="", help="显式指定代理；默认自动探测")
     parser.add_argument("--check", action="store_true", help="需要 token：验证 token 与文件后再停")
     parser.add_argument("--offline-check", action="store_true",
                         help="本地自检：文件清单、必需文件、frontmatter、密钥（不联网、不需要 token）")
@@ -143,11 +188,28 @@ def main() -> int:
         print("若只想检查文件，用 --offline-check（不需要 token）。", file=sys.stderr)
         return 2
 
+    # 先确定代理。直连在实测环境里会超时，必须显式探测而不是指望环境变量。
+    session = requests.Session()
+    proxies = {}
+    if args.proxy:
+        proxies = {"http": args.proxy, "https": args.proxy}
+        print(f"使用指定代理：{args.proxy}")
+    else:
+        found = probe_proxy(session)
+        if found:
+            proxies = {"http": found, "https": found}
+        else:
+            print("未探测到可用代理，将直连 Hugging Face（实测环境里通常会超时）。", file=sys.stderr)
+
+    def hdr(json_body: bool = False) -> dict:
+        return headers(args.token, json_body)
+
     # ---- 0. token 与账号 ----
     try:
-        r = requests.get(f"{HF}/api/whoami-v2", headers=headers(args.token), timeout=30)
+        r = session.get(f"{HF}/api/whoami-v2", headers=hdr(), proxies=proxies, timeout=40)
     except Exception as exc:  # noqa: BLE001
         print(f"无法连接 Hugging Face：{type(exc).__name__}: {exc}", file=sys.stderr)
+        print("提示：用 --proxy http://127.0.0.1:端口 显式指定代理。", file=sys.stderr)
         return 2
     if r.status_code != 200:
         print(f"token 不可用：HTTP {r.status_code} {r.text[:300]}", file=sys.stderr)
@@ -194,7 +256,7 @@ def main() -> int:
         return 0
 
     # ---- 4. 建 Space（已存在则复用）----
-    r = requests.get(f"{HF}/api/spaces/{space_id}", headers=headers(args.token), timeout=30)
+    r = session.get(f"{HF}/api/spaces/{space_id}", headers=hdr(), proxies=proxies, timeout=40)
     if r.status_code == 200:
         info = r.json()
         print(f"Space 已存在：{space_id}（sdk={info.get('sdk')}）")
@@ -206,8 +268,8 @@ def main() -> int:
             "private": bool(args.private),
             "hardware": "cpu-basic",
         }
-        r = requests.post(f"{HF}/api/repos/create", headers=headers(args.token, True),
-                          data=json.dumps(payload), timeout=60)
+        r = session.post(f"{HF}/api/repos/create", headers=hdr(True),
+                         data=json.dumps(payload), proxies=proxies, timeout=90)
         if r.status_code not in (200, 201):
             print(f"建 Space 失败：HTTP {r.status_code} {r.text[:400]}", file=sys.stderr)
             return 6
@@ -238,9 +300,9 @@ def main() -> int:
         }
         if rev:
             payload["parentCommit"] = rev
-        r = requests.post(f"{HF}/api/spaces/{space_id}/commit/main",
-                          headers=headers(args.token, True),
-                          data=json.dumps(payload), timeout=300)
+        r = session.post(f"{HF}/api/spaces/{space_id}/commit/main",
+                         headers=hdr(True),
+                         data=json.dumps(payload), proxies=proxies, timeout=600)
         if r.status_code not in (200, 201):
             print(f"上传失败（第 {start // BATCH + 1} 批）：HTTP {r.status_code} {r.text[:500]}",
                   file=sys.stderr)

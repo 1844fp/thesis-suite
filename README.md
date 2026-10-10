@@ -230,11 +230,19 @@ cd E:\AI\thesis-suite
 装好之后，**每次登录 Windows 站点就自动在 8878 端口待命**，浏览器打开
 <http://127.0.0.1:8878/> 即可，不用再开终端。
 
+如果 `install` 报"两种自启方式都被当前权限拒绝"（受限会话、组策略、或非管理员环境），
+在**管理员 PowerShell** 里粘这一行即可，效果相同：
+
+```powershell
+Copy-Item 'E:\AI\thesis-suite\start_background.cmd' ([Environment]::GetFolderPath('Startup') + '\ThesisSuite.cmd')
+```
+
 三点值得说明：
 
 * **自启有两套兜底**。优先用计划任务；被权限拒绝就改用"启动文件夹"（不需要管理员）。
-  两套都被拒时脚本不会失败，而是**打印一条可直接复制执行的命令**，你粘一次就装好。
-  受限环境下（例如远程会话、组策略限制）会遇到这种情况。
+  两套都被拒时脚本不会失败，而是**打印一条可直接复制执行的命令**。
+* **`start_background.cmd` 是幂等的**（内部用 `service.ps1 start -IfIdle`）。
+  登录自启和手动启动各跑一次，不会起两个进程抢端口。
 * **只监听本机**。要让同一局域网的其他设备（手机、平板）也能访问，用
   `.\service.ps1 start -Host_ 0.0.0.0`，然后用 `http://<本机IP>:8878/`。
   注意那等于把服务暴露给局域网，而本站**没有任何访问鉴权**——只在可信网络里这么做。
@@ -244,6 +252,24 @@ cd E:\AI\thesis-suite
 之所以不用启动脚本重定向输出，是因为 `Start-Process` 一旦带
 `-RedirectStandardOutput`，.NET 会等子进程退出才返回，而常驻服务永远不退出——
 "启动"命令就会永远挂住。实测踩过两次，细节写在 `suite/__main__.py` 的 `_log_config` 里。
+
+### Windows 脚本的编码约束（改脚本前必读）
+
+`tools/check_encodings.py` 把这条固化了。改完脚本跑一下：
+
+```powershell
+python tools\check_encodings.py
+```
+
+* **`.cmd` / `.bat` 必须纯 ASCII。** `cmd.exe` 按代码页探测解码，UTF-8 中文注释会让它
+  吃掉 `rem` 前缀，把注释当命令执行（实测报 `'双击即可启动本机服务' is not recognized…`）。
+* **`.ps1` 允许中文，但必须有 UTF-8 BOM。** Windows PowerShell 5.1 对没有 BOM 的脚本
+  按 ANSI/GBK 解码，中文注释被解坏后**直接语法错误**，而且报错位置指向参数块，
+  完全看不出是编码问题（实测报 `Missing expression after ','`）。
+
+> ⚠️ 用编辑器/脚本改这两个 `.ps1` 之后**务必确认 BOM 还在**——
+> 大多数写入工具默认不保留 BOM，这个坑在开发过程中反复踩过三次。
+> `check_encodings.py` 就是为它写的。
 
 ---
 
