@@ -214,6 +214,37 @@ python -m uvicorn suite.api.app:create_app --factory --host 127.0.0.1 --port 887
 
 接口文档：<http://127.0.0.1:8878/api/docs>
 
+### 让它"随时打开就有"（常驻服务）
+
+不想每次手动敲命令，用 `service.ps1` 把它做成常驻：
+
+```powershell
+cd E:\AI\thesis-suite
+.\service.ps1 install     # 装登录自启并立即启动
+.\service.ps1 status      # 看状态（含健康检查与密钥封印状态）
+.\service.ps1 stop        # 停止
+.\service.ps1 restart     # 重启
+.\service.ps1 uninstall   # 卸载自启并停止
+```
+
+装好之后，**每次登录 Windows 站点就自动在 8878 端口待命**，浏览器打开
+<http://127.0.0.1:8878/> 即可，不用再开终端。
+
+三点值得说明：
+
+* **自启有两套兜底**。优先用计划任务；被权限拒绝就改用"启动文件夹"（不需要管理员）。
+  两套都被拒时脚本不会失败，而是**打印一条可直接复制执行的命令**，你粘一次就装好。
+  受限环境下（例如远程会话、组策略限制）会遇到这种情况。
+* **只监听本机**。要让同一局域网的其他设备（手机、平板）也能访问，用
+  `.\service.ps1 start -Host_ 0.0.0.0`，然后用 `http://<本机IP>:8878/`。
+  注意那等于把服务暴露给局域网，而本站**没有任何访问鉴权**——只在可信网络里这么做。
+* **不在本机时不适用**。这是本机常驻方案，不是公网部署；公网见第八节。
+
+日志在 `logs/service.out.log`（UTF-8，中文可读，由 Python 侧自己写）。
+之所以不用启动脚本重定向输出，是因为 `Start-Process` 一旦带
+`-RedirectStandardOutput`，.NET 会等子进程退出才返回，而常驻服务永远不退出——
+"启动"命令就会永远挂住。实测踩过两次，细节写在 `suite/__main__.py` 的 `_log_config` 里。
+
 ---
 
 ## 七、测试
