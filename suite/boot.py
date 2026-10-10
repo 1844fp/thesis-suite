@@ -73,11 +73,78 @@ def prepare() -> Path:
     # 上游 config 模块读这些环境变量（见 suite/config.py 的说明）。
     os.environ.setdefault("SUITE_ROOT", str(SUITE_ROOT))
     os.environ.setdefault("DSH_THESIS_DATA_DIR", str(SUITE_ROOT / "data"))
+
+    _NEUTRALIZED[:] = _seal_against_server_keys()
     return SUITE_ROOT
 
 
+#: ``_seal_against_server_keys`` 实际改动了什么。给 ``/api/health`` 如实上报，
+#: 让"服务器密钥不会被借用"这件事在运行时可见，而不是只写在注释里。
+_NEUTRALIZED: list[str] = []
+
+
+def _seal_against_server_keys() -> list[str]:
+    """把上游「借用服务器密钥」的回退彻底关掉，返回实际处理过的模块名。
+
+    本站是 BYOK 的：密钥只从请求头来。但上游两套代码都有**从服务器本地取密钥**的回退：
+
+    * ``thesis-agents``      ``load_settings()``：环境变量 > 本项目 .env > ``E:\\AI\\thesis-assistant\\.env``
+    * ``thesis-topic-helper`` ``load_settings()``：``../thesis-assistant/.env`` > 本项目 .env > 环境变量
+
+    本站的请求路径一次都不调用 ``load_settings()``（``tools/smoke_byok.py`` 用 AST
+    静态校验这一点）。但"没人调用"是**靠约定**保证的，不是结构性的：将来任何一条路径
+    误调一次，就会拿站主机器上的真密钥替访客付费——而且是几十次模型调用的规模。
+
+    这里把回退**数据**置空，而不是去改上游的函数：
+
+    * 清掉 ``os.environ`` 里的 ``LLM_*``，让"环境变量优先"这一档失效；
+    * 把两个模块上的回退路径元组换成空元组，让"读邻居项目 .env"这一档失效。
+
+    换掉元组而不是给函数打补丁，是为了**改动面最小**：只动两个模块级常量，
+    上游函数体一行不碰。清 ``os.environ`` 里的 key 而不是只把自己钉成空串也很关键——
+    早先的版本用 ``os.environ["LLM_API_KEY"] = ""``，实测**没有用**：
+    ``thesis-agents`` 写的是 ``os.environ.get("LLM_API_KEY") or env.get(...)``，
+    空串为假，于是继续往下读到了邻居项目的真密钥。
+
+    注意：本函数只在**本站自己的进程**里生效，不影响那两个项目独立运行。
+    """
+    touched: list[str] = []
+
+    # ---- 1. 环境变量这一档 ----
+    # 上游都读 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL。本站一律从请求头取，
+    # 不依赖环境变量，所以直接清掉最干净（不"钉空串"——空串在某些写法里会被继续穿透）。
+    for key in ("LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL"):
+        if os.environ.pop(key, None) is not None:
+            touched.append(f"env:{key}")
+
+    # ---- 2. 邻居项目 .env 这一档 ----
+    # 模块级常量，import 之后覆盖即可；两个模块都不重读这两个常量之外的来源。
+    try:
+        import app.config as thesis_config
+
+        if thesis_config.FALLBACK_ENV_PATHS:
+            thesis_config.FALLBACK_ENV_PATHS = ()
+            thesis_config.FALLBACK_KEYS = ()
+            touched.append("app.config.FALLBACK_ENV_PATHS")
+    except Exception:  # noqa: BLE001 - 上游不可用时不该让引导层崩掉
+        pass
+
+    try:
+        import core.config as topic_config
+
+        if topic_config.SIBLING_ENV_FILES:
+            topic_config.SIBLING_ENV_FILES = ()
+            # 邻居项目的 models.json 里也可能躺着密钥，一并关掉。
+            topic_config.SIBLING_MODELS_JSON = Path("/nonexistent/thesis-suite-disabled")
+            touched.append("core.config.SIBLING_ENV_FILES")
+    except Exception:  # noqa: BLE001
+        pass
+
+    return touched
+
+
 def describe() -> dict:
-    """给界面用的诊断信息：确认两套上游代码确实可导入。"""
+    """给界面用的诊断信息：确认两套上游代码确实可导入，且密钥回退确实被关掉。"""
     import importlib
 
     out: dict = {"suite_root": str(SUITE_ROOT), "packages": {}}
@@ -93,4 +160,7 @@ def describe() -> dict:
             }
     real = [p for p in sys.path if p.startswith(str(SUITE_ROOT))]
     out["resolved_paths"] = real
+    # 把"服务器密钥不会被借用"这件事在运行时暴露出来，而不是只写在注释里。
+    out["key_fallback_neutralized"] = list(_NEUTRALIZED)
+    out["server_key_present"] = bool(os.environ.get("LLM_API_KEY", "").strip())
     return out

@@ -85,6 +85,35 @@ vendor/
 凭据只存在于**请求局部对象**里，不写 `os.environ`、不写任何全局变量。
 环境变量是进程级的，两个访客同时请求会互相覆盖——这正是不能用它的原因。
 
+### 还有一道结构性防线（`suite/boot.py`）
+
+"本站不调用 `load_settings()`"是**靠约定**成立的，不是靠结构。将来任何一条路径
+误调一次，就会拿站主机器上的真密钥替访客付费——而且是几十次模型调用的规模。
+
+所以 `boot.prepare()` 会主动把上游的回退**数据**置空（只动两个模块级常量，不碰上游函数体）：
+
+| 档位 | 处理 |
+|---|---|
+| `os.environ` 里的 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | 直接删除 |
+| `app.config.FALLBACK_ENV_PATHS`（指向 `E:\AI\thesis-assistant\.env` 等） | 换成空元组 |
+| `core.config.SIBLING_ENV_FILES` / `SIBLING_MODELS_JSON` | 换成空元组 / 不存在的路径 |
+
+> **为什么不能只把 `LLM_API_KEY` 设成空串**：实测无效。`thesis-agents` 写的是
+> `os.environ.get("LLM_API_KEY") or env.get("LLM_API_KEY", "")`——空串为假，
+> 于是继续往下读，读到了邻居项目 `.env` 里的**真密钥**。第一版就是这么写的，
+> 被 `tools/smoke_byok.py` 当场抓出来。必须删掉环境变量、并清空回退路径元组。
+
+`tools/smoke_byok.py` 用三种方式验证这道防线：
+
+1. 往隔离层放一个带假密钥的兜底 `.env`，调上游 `load_settings()`，必须取不到密钥；
+2. 用 **AST** 静态校验 `suite/` 里 12 个模块**没有一个真的调用** `load_settings()`
+   （用 AST 而不是 grep，因为在注释里解释"为什么不能调它"会被文本匹配误报成调用）；
+3. 从上游源码里提取硬编码的回退路径，证明本机上它们**确实躺着真密钥**——
+   也就是说这道防线不是多余的，而是必需的本机开发安全措施。
+
+封印的状态会在 `/api/health` 的 `key_fallback_neutralized` 字段里如实上报，
+运行时可见，而不是只写在注释里。
+
 请求头：
 
 ```
@@ -180,6 +209,7 @@ $env:PYTHONUTF8 = "1"
 
 python tools\smoke_suite.py     # 端到端：装配 / 离线出题 / 闸门 / 检查器 / 会话 / 前端
 python tools\smoke_gather.py    # 资料获取：50 项断言（含真实 Crossref 核验）
+python tools\smoke_byok.py      # BYOK 防线：服务器密钥不可被借用（含 AST 静态校验）
 python tools\live_chain.py      # 真实模型跑完整链路（会花钱），密钥从既有项目 .env 读
 ```
 
