@@ -207,11 +207,27 @@ python -m uvicorn suite.api.app:create_app --factory --host 127.0.0.1 --port 884
 $env:PYTHONPATH = "E:\AI\thesis-suite;E:\AI\aigc-reducer\libs;E:\AI\thesis-assistant\libs"
 $env:PYTHONUTF8 = "1"
 
-python tools\smoke_suite.py     # 端到端：装配 / 离线出题 / 闸门 / 检查器 / 会话 / 前端
-python tools\smoke_gather.py    # 资料获取：50 项断言（含真实 Crossref 核验）
-python tools\smoke_byok.py      # BYOK 防线：服务器密钥不可被借用（含 AST 静态校验）
-python tools\live_chain.py      # 真实模型跑完整链路（会花钱），密钥从既有项目 .env 读
+python tools\smoke_suite.py         # 端到端：装配 / 离线出题 / 闸门 / 检查器 / 会话 / 前端
+python tools\smoke_gather.py        # 资料获取：50 项断言（含真实 Crossref 核验）
+python tools\smoke_byok.py          # BYOK 防线：服务器密钥不可被借用（含 AST 静态校验）
+python tools\smoke_container.py     # 容器形态：干净环境 + suite/vendor 同级摆放
+python tools\check_requirements.py  # 依赖对账：requirements.txt 是否覆盖源码的真实 import
+python tools\live_chain.py          # 真实模型跑完整链路（会花钱），密钥从既有项目 .env 读
 ```
+
+其中 `smoke_container.py` 是最接近"公网会怎样"的一个。它在开发机上模拟容器环境：
+
+* 把 `suite` 与 `vendor` 复制到一个裸目录**同级摆放**（等价于镜像里的 `/app`）；
+* 用 `python -S -I` 起子进程——**不读 site-packages、不继承 `PYTHONPATH`**，
+  依赖只来自显式指定的目录（等价于容器里 pip 装出来的那份）；
+* 把 `E:\AI\thesis-assistant`、`E:\AI\aigc-reducer`、`E:\AI\thesis-agents`
+  三个 Windows 绝对路径**打桩成不存在**（等价于 Linux 容器里的情形）；
+
+然后验证离线出题、53 个检查器（含数字接地）、FastAPI 装配在那种形态下都能跑。
+
+> 这个模拟是**必要的**：开发机上跑通不等于容器里跑通。它当场抓出一个容器会炸的问题——
+> `anyio` 需要 `typing_extensions.sentinel`，而旧版本没有这个符号，
+> 启动直接 `ImportError`。所以 `requirements.txt` 里显式钉了 `typing-extensions>=4.12`。
 
 `live_chain.py` **只把密钥放在请求头里**传给服务器，服务器的代码路径里没有任何密钥回退——
 它同时也就验证了 BYOK 链路本身。
@@ -301,6 +317,8 @@ thesis-suite/
 │   ├── smoke_suite.py          端到端
 │   ├── smoke_gather.py         资料获取 50 项
 │   ├── smoke_byok.py           BYOK 防线（含 AST 静态校验）
+│   ├── smoke_container.py      容器形态模拟（干净环境 + 同级摆放）
+│   ├── check_requirements.py   依赖对账（AST 抠 import）
 │   ├── live_chain.py           真实模型跑完整链路
 │   ├── push_github.py          无 git 环境下用 GitHub API 推仓库
 │   └── push_hf.py              部署到 Hugging Face Spaces

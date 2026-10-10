@@ -3,9 +3,11 @@
 # 本机开发**不用**这个文件：工作区里已经 vendored 好这些库，run.cmd / run.ps1
 # 会把它们追加进 PYTHONPATH。容器里没有那些目录，才由 pip 安装这一份。
 #
-# 版本范围按 wordspace 里实际 vendored 的版本定（实测可用）：
-#   fastapi 0.141.1 / starlette 1.7.0 / httpx 0.28.1 / pydantic 2.13.5
-#   python-docx 1.2.0 / PyYAML 6.0.3 / lxml 6.1.3
+# ---- 直接依赖 -------------------------------------------------------------
+# 由 tools/check_requirements.py 静态核对（AST 抠 import），当前源码只 import 这 6 个
+# 第三方包 + 运行时需要的 python-multipart：
+#   fastapi 0.141.1 / httpx 0.28.1 / uvicorn 0.53 / lxml 6.1.3
+#   python-docx 1.2.0 / PyYAML 6.0.3
 
 fastapi>=0.115,<1.0
 uvicorn>=0.30,<1.0
@@ -14,3 +16,17 @@ python-docx>=1.1,<2.0
 PyYAML>=6.0,<7.0
 lxml>=5.0
 python-multipart>=0.0.9
+
+# ---- 显式钉住的传递依赖 ---------------------------------------------------
+# 这一条是**踩坑之后补上的**，不是想当然：
+#
+# fastapi / starlette 会带进 anyio，而 vendored 的 anyio 4.15.1 在导入时执行
+# ``from typing_extensions import sentinel``。开发机上 site-packages 里的
+# typing_extensions 版本偏旧、没有这个符号，于是启动直接失败：
+#
+#     ImportError: cannot import name 'sentinel' from 'typing_extensions'
+#
+# 容器里 pip 本来也会把 typing_extensions 作为 AnyIO/pydantic 的依赖装上，
+# 但**装到哪个版本取决于解析结果**。这里显式钉一个下界，避免瘦镜像上
+# 撞到同一个旧版本。任何 ≥4.12 的版本都有 sentinel。
+typing-extensions>=4.12
