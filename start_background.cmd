@@ -30,7 +30,13 @@ if not exist "%HERE%watch.ps1" (
   exit /b 2
 )
 
-start "ThesisSuiteWatchdog" /b powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%HERE%watch.ps1" -Port %SUITE_PORT%
+rem Why the redirection to nul matters: watch.ps1 never exits, and a child that
+rem inherits this console keeps the launcher's stdout/stderr handles open, so the
+rem calling shell waits for it. Measured twice: the command sat until its full
+rem timeout (300s/600s) even though the site was already up and serving.
+rem Redirecting to nul breaks that inheritance, so the launcher returns at once.
+rem watch.ps1 writes its own log file (logs\watchdog.log), so nothing is lost.
+start "ThesisSuiteWatchdog" /b powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%HERE%watch.ps1" -Port %SUITE_PORT% >nul 2>&1
 
 endlocal
 exit /b 0
