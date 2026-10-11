@@ -56,4 +56,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
 #   · SUITE_HOST / SUITE_PORT 由 suite/__main__.py 读取，缺省回落见该文件
 #   · --factory 是必须的：应用工厂里会先执行 sys.path 引导（suite.boot.prepare），
 #     直接传字符串导入路径才能保证引导先于上游模块的导入发生
-CMD ["sh", "-c", "exec python -m uvicorn suite.api.app:create_app --factory --host \"${SUITE_HOST:-0.0.0.0}\" --port \"${PORT:-7860}\""]
+#   · WEB_CONCURRENCY 缺省 1：免费档只有 512 MB 内存，而单个进程要装载两棵上游
+#     代码树 + 53 个检查器。多开 worker 会直接 OOM，所以默认就是 1，
+#     需要多进程时由平台显式覆盖这个变量。
+CMD ["sh", "-c", "exec python -m uvicorn suite.api.app:create_app --factory --host \"${SUITE_HOST:-0.0.0.0}\" --port \"${PORT:-7860}\" --workers \"${WEB_CONCURRENCY:-1}\" --log-level \"${SUITE_LOG_LEVEL:-info}\""]
