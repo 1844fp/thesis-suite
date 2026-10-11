@@ -306,49 +306,75 @@ python tools\live_chain.py          # 真实模型跑完整链路（会花钱）
 
 ---
 
-## 八、部署到 Hugging Face Spaces
+## 八、公网部署
 
-### 方式一：一条命令（需要你的 HF write token）
+### ⚠️ Hugging Face 已经不能免费跑 Docker Space 了
+
+**2026 年 7 月起**，Hugging Face 把 Docker / Gradio Space 的免费额度收到了付费订阅后面。
+免费账号调用建 Space 接口会得到：
+
+```
+HTTP 402  Static Spaces are free for everyone, but hosting Gradio and Docker Spaces
+          on free cpu-basic requires a PRO subscription.
+```
+
+这是平台政策变化，不是本项目的问题。所以下面按"用哪个平台"分别说。
+
+`Dockerfile` 已经做了兼容：**监听端口跟随平台的 `$PORT`**，
+Hugging Face（固定 7860）与 Render / Railway（注入 `$PORT`）都能直接用。
+
+### 方案一：支持 Docker 的免费托管（推荐，不需要信用卡）
+
+据 2026-09 的公开对比（[free-cloud-deployment-platforms-2026](https://snapdeploy.dev/blog/free-cloud-deployment-platforms-2026-comparison)）：
+
+| 平台 | 免费额度 | 信用卡 | 休眠 |
+|---|---|---|---|
+| **Render** | 750 小时/月，512 MB / 0.1 CPU，5 GB 流量 | 不需要 | 15 分钟无流量后休眠，约 1 分钟唤醒 |
+| **SnapDeploy** | 4 个容器，100 小时/月 | 不需要 | 15 分钟无流量后休眠 |
+| Railway | 30 天试用 $5，之后每月 $1 额度 | 不需要 | 默认不休眠 |
+| Koyeb / Fly.io / Heroku | 免费额度已取消或需绑卡 | 需要 | — |
+
+步骤（以 Render 为例）：
+
+1. 登录 <https://dashboard.render.com>，选 **New → Web Service**
+2. 连上 GitHub 仓库 `1844fp/thesis-suite`
+3. **Runtime** 选 `Docker`（Render 会自动读 `Dockerfile`）
+4. 端口不用填——`Dockerfile` 读平台注入的 `$PORT`
+5. 环境变量一个都不用配：站点是 BYOK 的，不含任何模型密钥
+6. 创建后会分配公开地址，形如 `https://thesis-suite-xxxx.onrender.com`
+
+可选环境变量见下表。
+
+### 方案二：Hugging Face（需要 PRO 订阅）
+
+如果你有或愿意订阅 HF PRO，`tools/push_hf.py` 可以直接一条命令部署：
 
 ```powershell
 # 先做本地自检（不联网、不需要 token）
 python tools\push_hf.py --offline-check
 
-# 真部署：自动建 Space 并上传
+# 真部署
 python tools\push_hf.py --token hf_你的write_token --space thesis-suite
 ```
 
-脚本会打印公开地址 `https://<用户名>-<space名>.hf.space`。
-**token 不会写进任何文件**，用完即可作废。
+脚本会自动探测代理（实测环境里 huggingface.co 直连超时，走 `127.0.0.1:7897` 才通）、
+建 Space、分批上传 107 个文件、打印公开地址。
 
-> 为什么不用 `huggingface_hub`：本机开发不用 `requirements.txt`（依赖是 vendored 的），
-> 为部署再装一套工具链不值得。工作区里已有 `requests`，脚本直接用 HF 的
-> commit API 提交，不引入新依赖。
+> 不要用**静态** Space 绕过收费：静态 Space 只跑前端，会丢掉 53 个本地检查器、
+> Crossref 文献核验与服务端 BYOK 转发——站点最值钱的部分就没了。
 
-### 方式二：手工五步
-
-1. 在 <https://huggingface.co/new-space> 新建 Space：**SDK** 选 `Docker`，
-   **Docker template** 选 `Blank`。
-2. 把这个 GitHub 仓库的内容推到 Space 的 git 远端：
-   `https://huggingface.co/spaces/<用户名>/<space名>`（密码用 HF write token）。
-3. Space 会自动构建并启动。
-4. 打开 `https://<用户名>-<space名>.hf.space` 验证。
-5. 可选：在 Space 设置页填 `SUITE_CROSSREF_MAILTO` 等变量（见下表）。
-
-**两种方式都不需要配置任何模型密钥。** 站点是 BYOK 的：密钥由访客在页面右上角填入，
-只存在他自己的浏览器里，随请求头转发给模型服务商。
-
-可选环境变量：
+### 可选环境变量
 
 | 变量 | 用途 |
 |---|---|
 | `SUITE_CROSSREF_MAILTO` | Crossref 礼貌池邮箱，填了更不易被限流（非密钥） |
 | `SUITE_ALLOW_CUSTOM_BASE_URL` | 设为 `1` 允许访客自带任意接口地址；不设则只放行内置服务商（防 SSRF） |
 | `DSH_THESIS_DATA_DIR` | 数据目录，默认 `/app/data`（容器内是临时的） |
+| `PORT` | 平台注入，`Dockerfile` 读它；本地 `docker run` 缺省 7860 |
 
-**已知限制**：会话数据只存在内存里。免费档 Space 会休眠，
-休眠后会话清空，前端会提示重来。这是有意的取舍——本站定位是
-"一次性把一份稿子走完整条链路"，不是长期论文管理平台。要长期保存请自己下载产物。
+**已知限制**：会话数据只存在内存里。免费档平台会休眠，**休眠后会话清空**，
+前端会提示重来。这是有意的取舍——本站定位是"一次性把一份稿子走完整条链路"，
+不是长期论文管理平台。要长期保存请自己下载产物。
 
 ---
 

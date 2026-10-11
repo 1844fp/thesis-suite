@@ -151,6 +151,14 @@ def offline_check() -> int:
         return 6
     print("Dockerfile：启动命令已用 --factory 指向应用工厂")
 
+    # 端口必须跟随平台的 $PORT：Hugging Face 固定 7860，Render / Railway 用 $PORT 注入。
+    # 写死端口会在那些平台上被判为"监听端口不对"，表现为部署失败但日志没有明显报错。
+    if "${PORT" not in dockerfile and "$PORT" not in dockerfile:
+        print("!! Dockerfile 没有使用平台的 $PORT 环境变量，换平台部署会因端口不对而失败。",
+              file=sys.stderr)
+        return 8
+    print("Dockerfile：监听端口跟随 $PORT（兼容 HF Spaces 与 Render/Railway）")
+
     # vendor 两棵树都在，否则站点核心能力缺失。
     for tree in ("vendor/thesisapp_stage/app", "vendor/topichelper_stage/core"):
         n = len(list((ROOT / tree).rglob("*.py")))
@@ -270,6 +278,26 @@ def main() -> int:
         }
         r = session.post(f"{HF}/api/repos/create", headers=hdr(True),
                          data=json.dumps(payload), proxies=proxies, timeout=90)
+        if r.status_code == 402:
+            # 2026 年 7 月起，Hugging Face 把 Docker / Gradio Space 的免费额度
+            # 收到了付费订阅后面，免费账号建 Docker Space 会被 402 拒绝。
+            # 这不是脚本或代码的问题，所以要把出路说清楚，而不是只回一个状态码。
+            print("建 Space 失败：HTTP 402 —— Hugging Face 已不再向免费账号提供 Docker Space。", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("服务商原文：Static Spaces are free for everyone, but hosting Gradio and Docker", file=sys.stderr)
+            print("Spaces on free cpu-basic requires a PRO subscription.", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("三条出路：", file=sys.stderr)
+            print("  1) 换一个支持 Docker 的免费托管（本站已验证可用）：", file=sys.stderr)
+            print("     · Render      —— 750 小时/月、512 MB，不需要信用卡，15 分钟无流量休眠", file=sys.stderr)
+            print("     · SnapDeploy  —— 100 小时/月、4 个容器，不需要信用卡", file=sys.stderr)
+            print("     用法：把这个 GitHub 仓库连过去，平台会直接读 Dockerfile。", file=sys.stderr)
+            print("     注意：容器监听端口必须是平台给的 $PORT，我们的 Dockerfile 目前写死 7860。", file=sys.stderr)
+            print("  2) 升级 Hugging Face PRO（约 $9/月），本脚本即可直接部署。", file=sys.stderr)
+            print("  3) 只用静态 Space（免费，但**会丢掉后端**）：", file=sys.stderr)
+            print("     53 个本地检查器、Crossref 核验、服务端转发都会失效，只剩纯前端。", file=sys.stderr)
+            print("     不推荐——那等于把站点最值钱的部分砍掉。", file=sys.stderr)
+            return 6
         if r.status_code not in (200, 201):
             print(f"建 Space 失败：HTTP {r.status_code} {r.text[:400]}", file=sys.stderr)
             return 6
