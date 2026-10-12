@@ -34,6 +34,11 @@ def main() -> int:
         ('id="wTitle"', "题目输入"),
         ('A 你的资料', "三层依据的说明"),
         ('联网检索真实文献作为依据', "开关文案"),
+        ('id="gDrop"', "文件拖放区"),
+        ('id="gFiles"', "文件选择框"),
+        ('multiple', "支持一次多选"),
+        ('accept=".pdf', "声明可接受的扩展名"),
+        ('扫描版', "扫描版 PDF 的提示"),
     ):
         hit = need in html
         print(f"  [{'OK ' if hit else 'FAIL'}] {why}：{need[:34]}")
@@ -47,6 +52,11 @@ def main() -> int:
         ("citations_invalid", "编造引用计数"),
         ("ungrounded_count", "无依据数字计数"),
         ("headingWithCite", "逐章依据徽标"),
+        ("importFiles", "文件导入处理"),
+        ("bindDropzone", "拖放事件绑定"),
+        ("/api/gather/import", "调用导入接口"),
+        ("new FormData()", "用 multipart 上传"),
+        ("e.dataTransfer", "读取拖入的文件"),
     ):
         hit = need in js
         print(f"  [{'OK ' if hit else 'FAIL'}] {why}：{need}")

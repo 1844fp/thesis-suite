@@ -304,7 +304,118 @@ async function exportTopics() {
 }
 
 /* ================================================================== ② 资料获取 */
-const Gather = { items: [], sid: '' };
+const Gather = { items: [], sid: '', imported: [] };
+
+/* ---- 文件导入 ----
+   解析在后端完成，**不需要 API Key**，所以这里用 fetch + FormData 直接传，
+   不走 api() 那个 JSON 封装（它会给请求加 Content-Type: application/json，
+   那会让 multipart 的 boundary 失效）。 */
+async function importFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+
+  const zone = $('gDrop');
+  const btn = $('btnExtract');
+  zone.classList.add('busy');
+  btn.disabled = true;
+  note($('gatherNote'), '', '');
+  setProgress($('gatherBar'), $('gatherMsg'), $('gatherProg'), 0.25,
+    `正在解析 ${files.length} 个文件…`);
+
+  const fd = new FormData();
+  files.forEach((f) => fd.append('files', f, f.name));
+
+  try {
+    const resp = await fetch('/api/gather/import', { method: 'POST', body: fd });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+
+    Gather.imported = data.sources || [];
+    renderImported(data, files);
+
+    // 把解析出的正文追加到文本区，这样访客能接着编辑，也能看到解析结果长什么样。
+    // 用 `---` 分隔，与原有的手动粘贴格式一致，抽取时走同一套切分逻辑。
+    const blocks = (data.sources || [])
+      .map((s) => `${s.title || '未命名'}\n${s.text || ''}`.trim())
+      .filter(Boolean);
+    if (blocks.length) {
+      const prev = $('gSources').value.trim();
+      $('gSources').value = (prev ? prev + '\n\n---\n\n' : '') + blocks.join('\n\n---\n\n');
+    }
+
+    const failed = data.failed || 0;
+    const warn = (data.files || []).filter((f) => f.ok && f.warning);
+    let kind = failed ? 'warn' : 'ok';
+    let msg = `已解析 ${data.parsed} 个文件，生成 ${data.source_count} 段可抽取文本。`;
+    if (failed) msg += ` ${failed} 个文件未能解析（见下表）。`;
+    if (warn.length) msg += ` ${warn.length} 个文件有提示。`;
+    msg += ' 现在点「抽取证据」把它们变成可引用的证据。';
+    note($('gatherNote'), kind, msg);
+    setProgress($('gatherBar'), $('gatherMsg'), $('gatherProg'), 0.6, '解析完成');
+    setTimeout(() => hideProgress($('gatherProg')), 1200);
+  } catch (err) {
+    note($('gatherNote'), 'err', '导入失败：' + esc(err.message));
+    hideProgress($('gatherProg'));
+  } finally {
+    zone.classList.remove('busy');
+    btn.disabled = false;
+    $('gFiles').value = '';        // 允许重复选择同一个文件
+  }
+}
+
+function renderImported(data, files) {
+  const el = $('gFileList');
+  const rows = data.files || [];
+  if (!rows.length) { el.innerHTML = ''; return; }
+
+  const totalBytes = data.total_bytes || 0;
+  el.innerHTML = `<div class="stat" style="margin-top:14px">
+      <div>收到文件<b>${data.received}</b></div>
+      <div>解析成功<b>${data.parsed}</b></div>
+      <div>失败<b>${data.failed}</b></div>
+      <div>可抽取段落<b>${data.source_count}</b></div>
+      <div>合计大小<b>${(totalBytes / 1024).toFixed(0)} KB</b></div>
+    </div>
+    <table class="list">
+      <tr><th>文件</th><th style="width:88px">类型</th><th style="width:74px">字数</th>
+          <th style="width:60px">页数</th><th>状态</th></tr>
+      ${rows.map((f) => {
+        let cls = '', text = '就绪';
+        if (f.error) { cls = 'bad'; text = esc(f.error); }
+        else if (f.warning) { cls = 'warn'; text = esc(f.warning); }
+        else if (!f.ok) { cls = 'warn'; text = '没有取到文字'; }
+        const kindCls = f.error ? 'bad' : (f.warning ? 'warn' : '');
+        return `<tr>
+          <td><strong>${esc(f.filename)}</strong>
+              <div style="color:var(--ink-3);font-size:12px">${esc(String(f.preview || '').slice(0, 70))}</div></td>
+          <td><span class="fkind ${kindCls}">${esc(f.kind || '?')}</span></td>
+          <td>${f.chars || 0}${f.truncated ? ' <span class="fkind warn">截断</span>' : ''}</td>
+          <td>${f.pages || '—'}</td>
+          <td style="font-size:12.5px">${text}</td>
+        </tr>`;
+      }).join('')}
+    </table>`;
+}
+
+function bindDropzone() {
+  const zone = $('gDrop');
+  const input = $('gFiles');
+
+  input.addEventListener('change', (e) => importFiles(e.target.files));
+
+  // dragover 必须 preventDefault，否则浏览器会直接打开文件、页面跳走。
+  ['dragenter', 'dragover'].forEach((ev) =>
+    zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.add('dragover'); }));
+  ['dragleave', 'drop'].forEach((ev) =>
+    zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.remove('dragover'); }));
+  zone.addEventListener('drop', (e) => {
+    if (e.dataTransfer && e.dataTransfer.files) importFiles(e.dataTransfer.files);
+  });
+
+  // 页面其他地方误拖入文件时不要让浏览器跳走
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
+}
 
 function renderGather(items) {
   Gather.items = items || [];
@@ -731,6 +842,8 @@ async function boot() {
   buildTabs();
   const hash = location.hash.replace('#', '');
   selectTab(ASSISTANTS.some((a) => a.id === hash) ? hash : 'topics');
+
+  bindDropzone();
 
   LLM.load();
   try {

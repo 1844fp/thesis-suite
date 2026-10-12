@@ -25,10 +25,11 @@ import time
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from .. import credentials as creds_mod
+from .. import fileintake
 from .. import llm as llm_mod
 from ..sessions import STORE
 
@@ -414,6 +415,103 @@ def _citation(*, title: str, authors: str, container: str, year: str, doi: str) 
 def _authors(raw: str) -> list[str]:
     """拆作者串。中英文的常见分隔（顿号/逗号/分号/``and``）都要认。"""
     return [p.strip() for p in re.split(r"[、,，;；]|\band\b", str(raw or "")) if p.strip()]
+
+
+@router.post("/import")
+async def import_files(
+    request: Request,
+    files: list[UploadFile] = File(default_factory=list),
+) -> dict:
+    """上传本地文档（PDF / Word / Markdown / 文本 / HTML / CSV），解析成文本。
+
+    **这一步不需要 API Key**：只做格式解析，不调用模型。所以它可以在访客还没
+    决定用哪个模型时就先用起来。解析出的文本由前端交给 ``/extract`` 抽成证据。
+
+    ``?full=1`` 时把解析出的完整文本一起返回；默认只回摘要与前 4000 字预览——
+    一章 PDF 的全文回到浏览器没有意义，前端要的是"确认解析对了"，正文随后
+    由前端原样转发给 ``/extract``（那里有它自己的长度上限与截断策略）。
+
+    安全约束全部是硬性的，见 ``suite/fileintake.py`` 开头的说明：
+    只读、不落盘、限大小限数量、跳过不支持的类型并如实回报原因。
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="没有收到文件。")
+    if len(files) > fileintake.MAX_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"一次最多导入 {fileintake.MAX_FILES} 个文件（收到 {len(files)} 个）。",
+        )
+
+    # full=1 时回完整文本。默认不回，避免几 MB 的正文在浏览器与后端之间来回搬。
+    full = str(request.query_params.get("full") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    results: list[fileintake.Extracted] = []
+    total_bytes = 0
+    for upload in files:
+        name = upload.filename or "未命名"
+        try:
+            data = await upload.read()
+        except Exception as exc:  # noqa: BLE001 - 读上传流也可能失败
+            results.append(fileintake.Extracted(filename=name, error=f"读取上传内容失败：{exc}"))
+            continue
+        finally:
+            try:
+                await upload.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+        total_bytes += len(data)
+        if total_bytes > fileintake.MAX_FILE_BYTES * 2:
+            results.append(fileintake.Extracted(
+                filename=name,
+                error=f"本批文件累计过大（已超过 {fileintake.MAX_FILE_BYTES * 2 // 1024 // 1024} MB），已停止处理。",
+            ))
+            break
+        results.append(fileintake.extract(name, data))
+
+    ok_items = [r for r in results if r.ok]
+    sources = fileintake.split_into_sources(ok_items)
+
+    payload: list[dict] = []
+    for item in results:
+        view = item.summary()
+        if full and item.ok:
+            view["text"] = item.text
+        else:
+            view["text"] = item.text[:4000]
+            view["preview_only"] = item.ok and len(item.text) > 4000
+        view["suggested_source"] = {
+            "title": fileintake.guess_title(item),
+            "chars": len(item.text),
+        } if item.ok else None
+        payload.append(view)
+
+    # 全部失败是**真失败**：有文件但一个都没读出来，不能以 200 结束——
+    # 否则前端会显示"成功，0 条"，那是最误导人的结果。
+    if files and not ok_items:
+        reasons = "；".join(f"{r.filename}: {r.error or r.warning}" for r in results[:4])
+        raise HTTPException(
+            status_code=422,
+            detail=f"{len(files)} 个文件都没能解析出文字。{reasons}",
+        )
+
+    return {
+        "ok": True,
+        "received": len(files),
+        "parsed": len(ok_items),
+        "failed": len(results) - len(ok_items),
+        "total_bytes": total_bytes,
+        "files": payload,
+        # 直接可交给 /extract 的 sources（PDF 逐页拆分，保留页码）。
+        "source_count": len(sources),
+        "sources": sources if full else [
+            {**s, "text": s["text"][:1500]} for s in sources
+        ],
+        "note": (
+            "解析不需要 API Key。把 sources 交给 /api/gather/extract 即可抽成证据；"
+            "PDF 已按页拆分，证据会带上页码。"
+        ),
+    }
 
 
 @router.post("/extract")

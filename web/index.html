@@ -186,6 +186,31 @@ details.adv { margin-top: 10px; }
 details.adv summary { cursor: pointer; font-size: 13px; color: var(--ink-3); }
 details.adv summary:hover { color: var(--ink-2); }
 details.adv > div { margin-top: 10px; }
+
+/* ---- 文件拖放区 ---- */
+.dropzone {
+  position: relative; border: 2px dashed var(--line-2); border-radius: 10px;
+  padding: 26px 20px; text-align: center; background: #fbfbfc;
+  transition: border-color .15s, background .15s; cursor: pointer;
+}
+.dropzone:hover { border-color: var(--brand); background: var(--brand-soft); }
+.dropzone.dragover { border-color: var(--brand); background: var(--brand-soft); }
+.dropzone.busy { opacity: .6; cursor: progress; }
+.dropzone input[type=file] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
+}
+.dz-icon { font-size: 26px; line-height: 1.2; }
+.dz-main { font-size: 14px; color: var(--ink-2); margin-top: 4px; }
+.dz-sub { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
+
+/* 导入结果表格里的状态徽标 */
+.fkind {
+  display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px;
+  background: #f2f4f7; border: 1px solid var(--line); color: var(--ink-2);
+}
+.fkind.bad { background: #fdf3f2; color: var(--bad); border-color: #f0c8c2; }
+.fkind.warn { background: #fdf8ec; color: var(--warn); border-color: #edd8ab; }
 </style>
 </head>
 <body>
@@ -265,14 +290,33 @@ details.adv > div { margin-top: 10px; }
   <!-- ============ ② 资料获取 ============ -->
   <section class="panel" id="p-gather">
     <div class="card">
-      <h2><span class="step">1</span>把你的资料贴进来</h2>
+      <h2><span class="step">1</span>导入或粘贴你的资料</h2>
       <p class="hint">
-        每块资料之间用<strong>一行 <code>---</code></strong> 分隔。可以贴摘要、正文摘录、参考文献。
-        助手会把自由文本抽成结构化证据，并<strong>逐字校验</strong>它引用的"原文"是否真的存在——
-        模型编造的片段会被直接丢掉。
+        <strong>导入文件不需要 API Key</strong>——解析在本地完成。支持
+        <strong>PDF / Word(.docx) / Markdown / 纯文本 / HTML / CSV</strong>。
+        PDF 会<strong>按页拆分</strong>，抽取出的证据会带上页码，方便回查原文。
+        解析完的文件会出现在下面的文本区里，你可以再补充或修改，然后点「抽取证据」。
       </p>
-      <label class="f" for="gSources">资料原文</label>
-      <textarea id="gSources" rows="12" placeholder="第一份资料的题名或内容…&#10;&#10;---&#10;&#10;第二份资料…&#10;&#10;---&#10;&#10;参考文献（可整段粘贴，用于真伪核验）：&#10;[1] 张三. 某某研究[J]. 某某学报, 2020, 12(3): 45-56. DOI: 10.xxxx/xxxxx"></textarea>
+
+      <div class="dropzone" id="gDrop">
+        <input type="file" id="gFiles" multiple
+               accept=".pdf,.docx,.md,.markdown,.txt,.text,.html,.htm,.csv,.tsv,.json,.bib">
+        <div class="dz-icon">📄</div>
+        <div class="dz-main">把文件拖到这里，或<strong>点击选择</strong></div>
+        <div class="dz-sub">
+          单个文件上限 25 MB，一次最多 10 个。扫描版（图片型）PDF 取不出文字，会明确提示需要 OCR。
+        </div>
+      </div>
+      <div id="gFileList"></div>
+
+      <details class="adv" style="margin-top:14px">
+        <summary>或者：直接粘贴文本（每块资料之间用一行 <code>---</code> 分隔）</summary>
+        <div style="margin-top:10px">
+          <label class="f" for="gSources">资料原文</label>
+          <textarea id="gSources" rows="12" placeholder="第一份资料的题名或内容…&#10;&#10;---&#10;&#10;第二份资料…&#10;&#10;---&#10;&#10;参考文献（可整段粘贴，用于真伪核验）：&#10;[1] 张三. 某某研究[J]. 某某学报, 2020, 12(3): 45-56. DOI: 10.xxxx/xxxxx"></textarea>
+        </div>
+      </details>
+
       <div class="row">
         <button class="btn" id="btnExtract">抽取证据</button>
         <button class="ghost" id="btnVerify" disabled>核验文献真伪</button>

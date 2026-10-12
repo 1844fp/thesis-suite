@@ -57,7 +57,8 @@ class GitHub:
     def __init__(self, token: str) -> None:
         self.token = token
 
-    def call(self, method: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
+    def call(self, method: str, path: str, payload: dict | None = None,
+             *, content_type: str = "application/json") -> tuple[int, dict]:
         url = API + path
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
         req = urllib.request.Request(url, data=body, method=method)
@@ -65,7 +66,9 @@ class GitHub:
         req.add_header("Accept", "application/vnd.github+json")
         req.add_header("User-Agent", "thesis-suite-push")
         if body:
-            req.add_header("Content-Type", "application/json")
+            # Content-Type 必须显式给。有些接口（blob）缺了它就报 malformed request，
+            # 而错误信息里完全看不出是头部的问题。
+            req.add_header("Content-Type", content_type)
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:
                 raw = resp.read().decode("utf-8", "replace")
@@ -158,28 +161,69 @@ def main() -> int:
             return 4
         print("初始化完成")
 
-    # ---- 2. 一次建好整棵树（内联内容，不需要逐个上传 blob）----
+    # ---- 2. 建树 ----
     #
-    # 这里用 tree 的内联 ``content`` 而不是先逐个建 blob：98 个文件如果逐个建 blob
-    # 就是 98 次请求，既慢又容易撞二级限流。内联方式一次请求搞定。
-    # 代价是内容必须是合法 UTF-8——所以下面先严格解码校验，**宁可明确报错，
-    # 也不要静默替换字符把文件写坏**。
-    tree = []
-    for name, data in files:
+    # 这里用「先建 blob，再拿 SHA 建 tree」，而不是把文件内容内联进 tree 请求。
+    # 原因是踩过一次：文件涨到 118 个、内联内容约 1.9 MB 时，创建 tree 的请求
+    # 被 GitHub 以 `HTTP 400 malformed request` 拒掉——内联方式对**单次请求的
+    # 体积**有隐性上限，而 100 个文件时还正常，属于涨到一定规模才暴露的问题。
+    #
+    # 分开之后每次请求都很小：一个 blob 一个请求，tree 最多 40 条一块。
+    # 代价是请求数变多（118 个 blob ≈ 118 次），但单个请求失败的排查也容易得多。
+    #
+    # 内容仍然是 UTF-8 文本——GitHub 的 blob 接口接受纯文本 content，
+    # 而中文用 base64 能避开任何编码歧义，所以这里统一 base64。
+    import base64 as _b64
+
+    blobs: dict[str, str] = {}
+    total = len(files)
+    for idx, (name, data) in enumerate(files, start=1):
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError as exc:
-            print(f"!! {name} 不是合法 UTF-8，内联上传会写坏它：{exc}", file=sys.stderr)
-            print("   请改用 Git Data API 的 blob 方式（base64）上传该文件。", file=sys.stderr)
+            print(f"!! {name} 不是合法 UTF-8：{exc}", file=sys.stderr)
+            print("   请改用 blob 的 base64 方式上传该文件。", file=sys.stderr)
             return 5
-        tree.append({"path": name, "mode": "100644", "type": "blob", "content": text})
+        payload_blob = {
+            "content": _b64.b64encode(text.encode("utf-8")).decode("ascii"),
+            "encoding": "base64",
+        }
+        # 显式声明 Content-Type。GitHub 的 blob 接口比 tree 接口严格：
+        # 不带 application/json 时会把请求判成 malformed（HTTP 400），
+        # 而且报错信息完全看不出是头部缺失——实测在一个 19KB 的文件上撞到过。
+        status, made = gh.call(
+            "POST", f"/repos/{owner}/{args.repo}/git/blobs", payload_blob,
+            content_type="application/json",
+        )
+        if status not in (200, 201):
+            print(f"建 blob 失败（{name}）：HTTP {status} "
+                  f"{json.dumps(made, ensure_ascii=False)[:300]}", file=sys.stderr)
+            return 5
+        blobs[name] = made["sha"]
+        if idx % 25 == 0 or idx == total:
+            print(f"  blob {idx}/{total}")
 
-    status, made = gh.call("POST", f"/repos/{owner}/{args.repo}/git/trees", {"tree": tree})
-    if status not in (200, 201):
-        print(f"建 tree 失败：HTTP {status} {json.dumps(made, ensure_ascii=False)[:600]}", file=sys.stderr)
-        return 5
-    tree_sha = made["sha"]
-    print(f"tree 已建：{tree_sha[:10]}（{len(made.get('tree') or [])} 个条目）")
+    # 拿 blob SHA 建树，每块 40 条。
+    tree_entries = [
+        {"path": name, "mode": "100644", "type": "blob", "sha": sha}
+        for name, sha in blobs.items()
+    ]
+    tree_sha = ""
+    made_count = 0
+    for start in range(0, len(tree_entries), 40):
+        chunk = tree_entries[start:start + 40]
+        payload_tree: dict = {"tree": chunk}
+        if tree_sha:
+            payload_tree["base_tree"] = tree_sha        # 往上一块上叠加
+        status, made = gh.call("POST", f"/repos/{owner}/{args.repo}/git/trees", payload_tree)
+        if status not in (200, 201):
+            print(f"建 tree 失败（第 {start // 40 + 1} 块）：HTTP {status} "
+                  f"{json.dumps(made, ensure_ascii=False)[:400]}", file=sys.stderr)
+            return 5
+        tree_sha = made["sha"]
+        made_count = len(made.get("tree") or [])
+        print(f"  已写入 {min(start + 40, len(tree_entries))}/{len(tree_entries)} 个条目")
+    print(f"tree 已建：{tree_sha[:10]}（末块 {made_count} 个条目）")
 
     # ---- 3. 提交 ----
     status, ref = gh.call("GET", f"/repos/{owner}/{args.repo}/git/ref/heads/{branch}")
