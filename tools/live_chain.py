@@ -154,14 +154,18 @@ def main() -> int:
     else:
         print("核验失败（可能是网络）：", resp.text[:300])
 
-    print("\n=== ③ 写作：逐章生成（真实模型，只依据证据）===")
+    print("\n=== ③ 写作：联网检索 + 分层引用（真实模型 + 真实文献库）===")
+    # 本次改动的主角：不再要求先录证据，写作会自己去公开文献库检索。
+    # 同时仍保留可靠性约束——引用编号必须在池内、数字必须有依据。
     events = sse(client, "/api/writing/draft", headers=headers, body={
         "sid": sid,
         "title": "乡村教师职业倦怠对教学投入的影响机制研究",
         "genre": "empirical",
         "sections": ["第1章 绪论", "第2章 文献综述"],
+        "use_web": True,
     })
     draft = next((e["draft"] for e in events if e.get("type") == "result"), None)
+    coverage = next((e.get("coverage") for e in events if e.get("type") == "result"), None)
     for e in events:
         if e.get("type") == "stage":
             print(f"  [{e.get('stage')}] {e.get('message')}")
@@ -169,24 +173,70 @@ def main() -> int:
         err = next((e.get("message") for e in events if e.get("type") == "error"), "未知错误")
         print("!! 写作失败：", err)
         return 1
-    print(f"\n生成 {len(draft['sections'])} 章，共 {draft['words']} 字，"
-          f"引用编号 {draft['citation_count']} 个（证据库 {draft['evidence_total']} 条）")
+
+    print(f"\n生成 {len(draft['sections'])} 章，共 {draft['words']} 字")
+    print(f"本次检索到的真实文献：{draft.get('web_records_total', 0)} 条")
+    if coverage:
+        print("依据覆盖度：")
+        for k, v in coverage.items():
+            print(f"  {k}: {v}")
     if draft.get("notice"):
         print("提示：", draft["notice"])
+
     body = "\n".join(s["body"] for s in draft["sections"])
     print("\n正文片段：\n" + body[:900])
     import re
     cites = sorted({int(m) for m in re.findall(r"[\[【](\d{1,3})[\]】]", body)})
     print("\n正文里出现的引用编号：", cites)
+    print(f"证据库现有条数（含本次并入的联网文献）：{len(client.get('/api/writing/versions?sid=' + sid).json().get('versions') or [])} 个版本")
 
     print("\n=== ④ 评估：检查器 + 数字接地（真实链路闭环）===")
     # 这里刻意用 `##` 当章节标题：验证评估入口的标题归一化确实生效。
     # 上游切分器只认单个 `#`，所以不归一化的话「数字是否有依据」会静默失效。
     text = (f"# {draft['title']}\n\n" if draft.get("title") else "") + "\n\n".join(
         f"## {s['heading']}\n{s['body']}" for s in draft["sections"])
+
+    # 诊断：评估阶段实际看到的是什么。
+    #
+    # 诊断必须用**与检查器同一套**数字提取（fact_numbers），不能自己写正则。
+    # 先前用 `\d+(\.\d+)?` 把「教龄11～15年」这种**区间**拆出了个 "10"，
+    # 于是把"检查器报 0"误判成了失效——而实际那一版稿子的数字全都有依据。
+    # 诊断口径与实现不一致，会比没有诊断得出更坏的结论。
+    from suite.sessions import STORE as _STORE
+
+    _sess = _STORE.get(sid) if sid else None
+    if _sess is not None:
+        from app.writing.citations import fact_numbers
+
+        def _nums(blob: str) -> set[str]:
+            return {
+                n.rstrip("0").rstrip(".") if "." in n else n
+                for n in fact_numbers(blob)
+                if "." in n or len(n.lstrip("0")) >= 2
+            }
+
+        ledger = _sess.meta.get("writing_evidence") or {}
+        entries = [e for v in ledger.values() for e in v]
+        ledger_chars = sum(len(str(e.get("text") or "")) for e in entries)
+        in_body = _nums("\n".join(s["body"] for s in draft["sections"]))
+        in_ledger = _nums(" ".join(str(e.get("text") or "") + str(e.get("citation") or "")
+                                   for e in entries))
+        print(f"  诊断：会话证据 {len(_sess.evidence)} 条 | 台账桶 {list(ledger)} | "
+              f"台账条目 {len(entries)} | 台账正文字数 {ledger_chars}")
+        print(f"  诊断：正文事实数字 {len(in_body)} 个 → {sorted(in_body)}")
+        print(f"  诊断：台账里找不到的 {sorted(in_body - in_ledger)}（与检查器同口径）")
+
     resp = client.post("/api/review/check", headers=headers,
                        json={"text": text, "sid": sid, "title": draft["title"]})
     print("HTTP", resp.status_code)
+    # 把 /check 真正会用的送检文本打出来。此前诊断只打了本地拼的 text，
+    # 看不出服务端实际拿到什么——而问题恰恰在那里。
+    from suite.api.review import _text_of as _review_text_of
+
+    _actual = _review_text_of({"text": text}, sid)
+    print(f"  诊断：/check 实际送检文本的前 3 行：")
+    for _line in _actual.split("\n")[:3]:
+        print(f"         {_line[:66]!r}")
     if resp.status_code == 200:
         r = resp.json()
         print(f"检查器 {r['checked']} 项（失败 {len(r['failed_checkers'])}），"
@@ -200,6 +250,21 @@ def main() -> int:
         print(resp.text[:400])
 
     print(f"\n总耗时 {time.time() - t0:.1f} 秒")
+
+    # 把草稿与台账存盘，供 tools/_probe_long.py 逐项复核（避免继续靠猜）。
+    try:
+        import json as _json
+
+        _dump = Path(r"E:\AI\thesis-suite\logs\last_draft.json")
+        _dump.parent.mkdir(parents=True, exist_ok=True)
+        _sess2 = _STORE.get(sid)
+        _dump.write_text(_json.dumps({
+            "draft": draft,
+            "ledger": (_sess2.meta.get("writing_evidence") if _sess2 else {}) or {},
+        }, ensure_ascii=False), encoding="utf-8")
+        print(f"草稿样本已存盘：{_dump}")
+    except Exception as _exc:  # noqa: BLE001
+        print(f"（草稿样本存盘失败：{_exc}）")
     return 0
 
 

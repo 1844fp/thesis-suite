@@ -72,10 +72,50 @@ class Chat:
             text = chat.ask([{"role": "user", "content": "..."}])
     """
 
-    def __init__(self, creds: Credentials, *, timeout: float = 180.0) -> None:
+    def __init__(self, creds: Credentials, *, timeout: float = 180.0, provider: str = "") -> None:
         self.creds = creds
         self.timeout = timeout
+        self.provider = (provider or getattr(creds, "provider", "") or "deepseek").strip()
         self._client: httpx.Client | None = None
+
+    # -- 地址与模型 -------------------------------------------------------
+    @property
+    def base_url(self) -> str:
+        """解析出实际要请求的接口地址。
+
+        **必须在这里兜底，不能在调用方兜。** 浏览器默认只发 ``X-LLM-Key``，
+        ``base_url`` / ``model`` 交给后端按服务商预设补齐。早先 ``Chat`` 直接用原始
+        凭据，于是"访客只填 Key"这条最常见的路径上 ``base_url`` 是空串，
+        请求地址变成 ``/chat/completions``，httpx 抛
+        ``UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol``
+        ——错误信息完全指不到真正的原因（没选服务商），排查了很久。
+        """
+        explicit = (self.creds.base_url or "").strip()
+        if explicit:
+            return explicit.rstrip("/")
+        try:
+            from .credentials import provider_presets
+
+            presets = provider_presets()
+            preset = presets.get(self.provider) or presets.get("deepseek") or {}
+            return str(preset.get("base_url") or "").rstrip("/")
+        except Exception:  # noqa: BLE001 - 预设取不到时退回官方地址，总比空串好
+            return "https://api.deepseek.com/v1"
+
+    @property
+    def model(self) -> str:
+        """解析出实际要用的模型名。空值时按服务商预设补齐，理由同 base_url。"""
+        explicit = (self.creds.model or "").strip()
+        if explicit:
+            return explicit
+        try:
+            from .credentials import provider_presets
+
+            presets = provider_presets()
+            preset = presets.get(self.provider) or presets.get("deepseek") or {}
+            return str(preset.get("model") or "deepseek-chat")
+        except Exception:  # noqa: BLE001
+            return "deepseek-chat"
 
     # -- 生命周期 ---------------------------------------------------------
     def __enter__(self) -> "Chat":
@@ -108,7 +148,9 @@ class Chat:
             raise LLMError("这一步需要模型：请先在页面顶部填入你自己的 API Key。")
 
     def _url(self) -> str:
-        return self.creds.base_url.rstrip("/") + "/chat/completions"
+        # 走 base_url 属性（已含空值兜底），不要直接读 creds.base_url——
+        # 那是空串时会拼出 "/chat/completions"，httpx 报的是协议缺失，看不出根因。
+        return self.base_url + "/chat/completions"
 
     def _headers(self) -> dict:
         return {
@@ -129,7 +171,7 @@ class Chat:
         """非流式调用，返回文本。"""
         self._require()
         payload: dict[str, Any] = {
-            "model": self.creds.model,
+            "model": self.model,
             "messages": list(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -204,7 +246,7 @@ class Chat:
         """流式调用，逐片产出文本。"""
         self._require()
         payload = {
-            "model": self.creds.model,
+            "model": self.model,
             "messages": list(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,

@@ -469,21 +469,33 @@ async function runDraft() {
   const sections = $('wSections').value.split('\n').map((s) => s.trim()).filter(Boolean);
   const body = {
     sid: SID.get(), title, genre: $('wGenre').value, sections, provider: LLM.provider, mode: 'auto',
+    use_web: $('wUseWeb').checked,
   };
 
   try {
     await sse('/api/writing/draft', body, (ev) => {
       if (ev.type === 'stage') {
         setProgress($('writeBar'), $('writeMsg'), $('writeProg'), ev.progress || 0, ev.message || '');
-        if (ev.stage === 'blocked') note($('writeNote'), 'warn', esc(ev.message));
+        // 联网检索与降级提示要显眼：前者说明依据从哪来，后者说明依据变薄了。
+        if (ev.stage === 'warn') note($('writeNote'), 'warn', esc(ev.message));
+        else if (ev.stage === 'search') note($('writeNote'), '', esc(ev.message));
       } else if (ev.type === 'section') {
         renderDraft(ev.partial || { title, sections: ev.sections || [] });
       } else if (ev.type === 'result') {
         SID.set(ev.sid); Write.draft = ev.draft;
-        renderDraft(ev.draft);
+        renderDraft(ev.draft, ev.coverage, ev.notice);
         setProgress($('writeBar'), $('writeMsg'), $('writeProg'), 1, '完成');
         $('btnDraftExport').disabled = false;
-        if (ev.notice) note($('writeNote'), 'warn', esc(ev.notice));
+        const cov = ev.coverage || {};
+        // 编造引用与无依据数字必须用醒目的提示，不能只塞在覆盖度面板里。
+        if (cov.citations_invalid || cov.ungrounded_numbers) {
+          note($('writeNote'), 'warn',
+            `生成完成，但有 <strong>${cov.citations_invalid || 0} 处编造的引用编号</strong>、` +
+            `<strong>${cov.ungrounded_numbers || 0} 处找不到依据的数字</strong>，` +
+            '已在稿件上方逐章标出，请务必人工核对。');
+        } else {
+          note($('writeNote'), 'ok', '生成完成。');
+        }
         setTimeout(() => hideProgress($('writeProg')), 1200);
       } else if (ev.type === 'error') {
         note($('writeNote'), 'err', esc(ev.message));
@@ -500,7 +512,38 @@ async function runDraft() {
    「正文数字是否有依据」那条检查才跑得起来。这里与后端保持一致。 */
 const sectionHeading = (text) => `<h1>${esc(text || '')}</h1>`;
 
-function renderDraft(draft) {
+/* 依据覆盖度面板。
+   这是本次改动最关键的可解释性部分：放宽了写作依据之后，最大的风险不是"写不出来"，
+   而是**作者以为每一句都有依据**。所以把"用了多少 A 层、多少 B 层、有没有编造引用、
+   有没有找不到依据的数字"直接摆在稿件上方，而不是埋在日志里。 */
+function renderCoverage(cov, notice) {
+  const el = $('writeCoverage');
+  if (!cov) { el.innerHTML = ''; return; }
+  const bad = (cov.citations_invalid || 0) + (cov.ungrounded_numbers || 0);
+  const head = bad
+    ? `<div class="note warn"><strong>有 ${bad} 处需要人工核对</strong>——见下方明细与生成提示。</div>`
+    : `<div class="note ok">引用编号与数字都能在依据池里找到，未发现编造痕迹。</div>`;
+
+  const rows = [
+    ['引用总数', cov.citations_total ?? 0],
+    ['A 你的资料', cov.citations_user ?? 0],
+    ['B 联网文献', cov.citations_web ?? 0],
+    ['编造的引用编号', cov.citations_invalid ?? 0],
+    ['找不到依据的数字', cov.ungrounded_numbers ?? 0],
+    ['检索到的真实文献', cov.web_records_retrieved ?? 0],
+  ].map(([k, v]) => `<div>${k}<b>${v}</b></div>`).join('');
+
+  const sources = (cov.web_sources || []).join('、') || '无';
+  el.innerHTML = head +
+    `<div class="stat">${rows}</div>` +
+    `<div style="font-size:13px;color:var(--ink-2);margin-bottom:6px">
+       依据构成：<strong>${esc(cov.verdict || '未知')}</strong>
+       ${cov.web_records_retrieved ? `（检索源：${esc(sources)}）` : ''}
+     </div>` +
+    (notice ? `<div class="note">${esc(notice)}</div>` : '');
+}
+
+function renderDraft(draft, coverage, notice) {
   if (!draft) return;
   $('writeResultCard').classList.remove('hidden');
   const sections = draft.sections || [];
@@ -509,10 +552,31 @@ function renderDraft(draft) {
     ['章节数', sections.length],
     ['正文字数', total],
     ['引用编号', draft.citation_count ?? '—'],
+    ['联网文献', draft.web_records_total ?? 0],
   ].map(([k, v]) => `<div>${k}<b>${v}</b></div>`).join('');
 
+  renderCoverage(coverage || draft.coverage, notice || draft.notice);
+
   $('writeBody').innerHTML = sectionHeading(draft.title) +
-    sections.map((s) => sectionHeading(s.heading) + `<div>${esc(s.body || '')}</div>`).join('');
+    sections.map((s) => headingWithCite(s) + `<div>${esc(s.body || '')}</div>`).join('');
+}
+
+/* 每章标题后面挂一个小徽标，显示这一章各自用了多少依据。
+   整篇的覆盖度看不出"哪一章是凭记忆写的"，逐章标出来才用得上。 */
+function headingWithCite(section) {
+  const c = section.citations;
+  if (!c) return sectionHeading(section.heading);
+  const bits = [];
+  if (c.user) bits.push(`资料 ${c.user}`);
+  if (c.web) bits.push(`联网 ${c.web}`);
+  if (!bits.length) bits.push('无引用依据');
+  const cls = c.invalid ? 'bad' : (c.total ? 'ok' : 'warn');
+  return sectionHeading(section.heading) +
+    `<div class="tags"><span class="tag ${cls}">${esc(bits.join(' · '))}</span>` +
+    (c.invalid ? `<span class="tag bad">编造引用 ${c.invalid}</span>` : '') +
+    ((section.grounding && section.grounding.ungrounded_count)
+      ? `<span class="tag warn">无依据数字 ${section.grounding.ungrounded_count}</span>` : '') +
+    `</div>`;
 }
 
 async function exportDraft() {

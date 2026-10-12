@@ -301,8 +301,11 @@ details.adv > div { margin-top: 10px; }
     <div class="card">
       <h2><span class="step">1</span>定题目与结构</h2>
       <p class="hint">
-        写作<strong>只依据证据库</strong>：证据库里没有的内容，助手不会写。
-        所以请先在「资料获取」里录入资料——没有证据时生成会明确告诉你写不了，而不是编一篇出来。
+        写作依据分三层：<strong>A 你的资料</strong>（在「资料获取」录入）、
+        <strong>B 联网检索</strong>（从公开文献库找到的真实文献，带 DOI）、
+        <strong>C 模型自身知识</strong>。
+        A、B 两层可以挂引用编号；<strong>C 层内容不允许挂任何编号</strong>——
+        程序会逐个核对：编号越界、数字找不到依据，都会在生成结果里点名通报。
       </p>
       <div class="grid">
         <div>
@@ -318,6 +321,18 @@ details.adv > div { margin-top: 10px; }
         <label class="f" for="wSections">章节结构（每行一个，可留空用默认结构）</label>
         <textarea id="wSections" rows="5" placeholder="第1章 绪论&#10;第2章 文献综述&#10;第3章 研究设计&#10;第4章 结果与分析&#10;第5章 结论与展望"></textarea>
       </div>
+      <div style="margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#fafbfc">
+        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13.5px">
+          <input type="checkbox" id="wUseWeb" checked style="margin-top:4px;width:auto">
+          <span>
+            <strong>联网检索真实文献作为依据</strong>（推荐）
+            <span style="display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px">
+              从 Crossref / OpenAlex / arXiv 检索真实文献（带 DOI 可回查），并入依据池供引用。
+              不需要额外 Key。关掉后只能依据「资料获取」里录入的资料 + 模型自身知识。
+            </span>
+          </span>
+        </label>
+      </div>
       <div class="row">
         <button class="btn" id="btnDraft">逐章生成</button>
         <button class="ghost" id="btnDraftExport" disabled>导出 Markdown</button>
@@ -331,6 +346,7 @@ details.adv > div { margin-top: 10px; }
     <div class="card hidden" id="writeResultCard">
       <h2>稿件</h2>
       <div class="stat" id="writeStat"></div>
+      <div id="writeCoverage"></div>
       <div class="md" id="writeBody"></div>
     </div>
   </section>

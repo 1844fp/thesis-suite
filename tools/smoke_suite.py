@@ -98,14 +98,28 @@ def main() -> int:
     check("无 Key 抽取被拒绝且可读", resp.status_code == 400 and "Key" in resp.text,
           f"HTTP {resp.status_code} {resp.text[:160]}")
 
-    line("4. 写作助手 · 证据闸门（核心纪律）")
+    line("4. 写作助手 · 证据来源分层（行为已变更）")
+    print("  说明：早先「证据库为空就拒绝生成」的硬闸门已按需求放宽——")
+    print("        现在允许依据模型自身知识与联网检索写作。所以这里断言的是**新**行为：")
+    print("        不再拦下，但必须联网检索、并对无依据情况给出明确提示。")
     events = collect_sse(client, "/api/writing/draft",
-                         {"title": "测试题目", "sections": ["第1章 绪论"]})
-    blocked = any(e.get("stage") == "blocked" for e in events)
-    errored = any(e.get("type") == "error" for e in events)
-    check("无证据时被拦下", blocked and errored, f"阶段={[e.get('stage') or e.get('type') for e in events]}")
-    check("拦下时**没有**调用模型（不该出现 result）",
-          not any(e.get("type") == "result" for e in events))
+                         {"title": "乡村教师职业倦怠研究", "sections": ["第1章 绪论"]},
+                         headers={"X-LLM-Key": "sk-fake-not-used"})
+    kinds = [e.get("stage") or e.get("type") for e in events]
+    check("不再因为证据库为空而拦下生成",
+          not any(e.get("stage") == "blocked" for e in events),
+          f"阶段={kinds}")
+    check("确实发起了联网检索（B 层）",
+          any(e.get("stage") == "search" for e in events),
+          f"阶段={kinds}")
+    check("没有 API Key 时仍然拒绝（不能白用站主的额度）",
+          any(e.get("type") == "error" for e in events))
+
+    line("5. 写作助手 · 无 Key 且无证据时给出可读提示")
+    events = collect_sse(client, "/api/writing/draft",
+                         {"title": "测试题目", "sections": ["第1章 绪论"], "use_web": False})
+    err = next((e.get("message") for e in events if e.get("type") == "error"), "")
+    check("无 Key 时报错可读且指向 Key", "API Key" in err, err[:120])
 
     line("5. 评估助手 · 检查器全量可跑")
     checkers = client.get("/api/review/checkers").json()

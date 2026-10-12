@@ -38,15 +38,25 @@ MAX_LOOKUPS = 30
 
 
 def _text_of(body: dict, sid: str | None) -> str:
+    """取出待检文本，并统一做两件事：归一化标题层级、摘掉论文题目。
+
+    两个分支**都要走这一步**。早先草稿分支直接 ``return _render_draft(...)``，
+    跳过了归一化——而它当时把论文题目渲染成 ``#``，于是切分器把题目当成第一章，
+    真正的章节被吞掉，「数字无依据」这条检查只覆盖了题目那一行。
+    分支间处理不一致是这类静默失效的常见来源。
+    """
     text = str(body.get("text") or "").strip()
-    if text:
-        return normalize_headings(text)
-    if sid:
+    if not text and sid:
         session = STORE.get(sid)
         draft = (session.draft if session else None) or None
         if draft:
-            return _render_draft(draft)
-    return ""
+            text = _render_draft(draft)
+    if not text:
+        return ""
+
+    normalized = normalize_headings(text)
+    without_title, _title = strip_leading_title(normalized)
+    return without_title
 
 
 #: 中文论文里常见的章节标题写法。命中即认为"这一行是章节标题"。
@@ -58,40 +68,88 @@ _SECTION_HEADING = re.compile(
 
 
 def normalize_headings(text: str) -> str:
-    """把章节标题统一到单个 ``#``，让上游的章节切分器认得出。
+    """整理标题层级，让上游的章节切分器认得出**每一章**。
 
-    上游 ``split_by_sections`` 只认 ``# 第1章 绪论`` 这一种形式：``##`` 会被当作正文。
-    而「正文里的数字必须能在证据里找到」（``check_number_grounding``）这条检查是
-    **先取章节、再读证据台账**的——切不出章节就直接返回空，界面上表现为"检查通过"，
-    是最危险的那种静默失效（实测踩过：用 ``##`` 时该检查命中数恒为 0）。
+    上游 ``split_by_sections`` 的行为是：**在第一个 ``#`` 行处切第一刀，但 ``##``
+    不算标题（它是正文）**。这个细节决定了怎么做才对，实测踩过三种错法：
 
-    访客从别处粘进来的稿件标题层级五花八门，与其要求他们改格式，
-    不如在入口处归一化。只改标题行的层级，不动任何正文。
+    * 稿件全用 ``##`` 时：一章都切不出来，「正文数字必须有依据」
+      （``check_number_grounding``）直接返回空，界面显示"检查通过"；
+    * 归一化成"每行都 ``#``"时：第一个 ``#`` 是**论文题目**，于是切出来的
+      第一"章"是题目，第 1 章反而被它吞进正文——检查只覆盖题目那一行；
+    * 归一化成"第一个 ``#``、其余 ``##```"时：``##`` 又变回正文，切得更少。
+
+    所以正确做法是**把每一章都还原成 ``#``，同时不要出现"标题候选行"**。
+    题目行本身不是章节，也不该参与检查，从待检文本里去掉即可——
+    这样第一个 ``#`` 天然就是「第1章」。
     """
     out: list[str] = []
     for line in text.split("\n"):
-        stripped = line.lstrip("#").strip() if line.lstrip().startswith("#") else line.strip()
-        if stripped and _SECTION_HEADING.match(line if line.lstrip().startswith("#") else ("# " + stripped)):
+        starts_with_hash = line.lstrip().startswith("#")
+        stripped = line.lstrip("#").strip() if starts_with_hash else line.strip()
+        probe = line if starts_with_hash else ("# " + stripped)
+        if stripped and _SECTION_HEADING.match(probe):
+            # 统一成单个 #：切分器只认这一种层级。
             out.append("# " + stripped)
         else:
             out.append(line)
     return "\n".join(out)
 
 
+#: 看起来像"论文题目"而不是"章节标题"的行。
+#:
+#: 上游切分器在**第一个** ``#`` 处开始切，所以如果论文题目以 ``#`` 出现，
+#: 它会被当成第一章，真正的第 1 章被吞进正文。题目又不是需要检查的内容，
+#: 所以在送检前把它去掉最省事。
+#:
+#: 判据：**不是**章节标题（没有「第X章」「一、」「绪论」这类标识），
+#: 且长度像题目（4~60 字）。已经在章节里的正常短标题（如「结果与分析」）
+#: 会被 ``_SECTION_HEADING`` 先认出来，不会误判成题目。
+_TITLE_LINE = re.compile(r"^#{1,6}\s*(?!#)(.{4,60})$")
+
+
+def strip_leading_title(text: str) -> tuple[str, str]:
+    """从待检文本里摘掉开头的论文题目行，返回 ``(去掉题目后的文本, 题目)``。
+
+    只有"第一行看起来像题目而不是章节"时才摘；摘错了也只是少检查一行，
+    而论文题目本来就不含需要检查的正文内容（数字、引用都在章节里）。
+    """
+    lines = text.split("\n")
+    for idx, line in enumerate(lines[:5]):        # 题目只可能在最前面几行
+        if not line.lstrip().startswith("#"):
+            continue
+        stripped = line.lstrip("#").strip()
+        if not stripped:
+            continue
+        # 是章节标题 -> 不动它
+        if _SECTION_HEADING.match(line):
+            return text, ""
+        m = _TITLE_LINE.match(line)
+        if m:
+            rest = lines[:idx] + lines[idx + 1:]
+            return "\n".join(rest), stripped
+    return text, ""
+
+
 def _render_draft(draft: dict) -> str:
     """把稿件渲染成待检文本。
 
-    **章节标题必须用单个 ``#``。** 上游的章节切分器只认 ``# 第1章 绪论`` 这一种形式
-    （``##`` 会被当成正文），而「正文里的数字必须能在证据里找到」
-    （``check_number_grounding``）这条检查是**先取章节、再读证据台账**的：
-    切不出章节就直接返回空，表现为"检查通过"。实测踩过一次——
-    用 ``##`` 时这条最有价值的检查静默失效，命中数恒为 0。
+    **只有章节标题用单个 ``#``；论文题目不能也做成 ``#``。**
+    上游的章节切分器把每一个 ``#`` 行都当成一章，所以如果题目也用 ``#``，
+    切出来的第一"章"就是论文题目本身，真正的各章反而落在它后面被吞掉——
+    实测表现是「数字无依据」这条检查只覆盖了题目那一行，命中的数字少了一大半。
+    题目与章节是两种东西，这里就不该用同一个层级。
+
+    章节用单个 ``#`` 是必须的：``##`` 会被切分器当成正文，切不出章节时
+    ``check_number_grounding`` 直接返回空，界面上表现成"检查通过"。
     """
-    parts = []
+    parts: list[str] = []
     if draft.get("title"):
-        parts.append(f"# {draft['title']}")
+        # 不用 # 前缀：这不是章节，是稿件题目。
+        parts.append(str(draft["title"]).strip())
     for section in draft.get("sections") or []:
-        parts.append(f"# {section.get('heading') or ''}")
+        heading = str(section.get("heading") or "").strip()
+        parts.append(f"# {heading}" if heading else "")
         parts.append(str(section.get("body") or ""))
     return "\n\n".join(p for p in parts if p.strip())
 
