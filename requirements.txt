@@ -22,6 +22,12 @@ python-multipart>=0.0.9
 # 正是 tools/check_requirements.py 存在的意义（它按源码 import 对账）。
 pymupdf>=1.24
 
+# starlette：fastapi 的底层框架。虽然它是 fastapi 的传递依赖，
+# 但 ``suite/agents/bridge.py`` **直接 import** 了它（要手工构造 Request 让 agent
+# 复用既有路由 handler）。直接依赖就该显式声明——否则哪天 fastapi 换掉底层实现，
+# 自己代码里 import starlette 的地方会无声崩掉。版本跟随 fastapi 的约束。
+starlette>=0.40,<1.0
+
 # ---- 显式钉住的传递依赖 ---------------------------------------------------
 # 这一条是**踩坑之后补上的**，不是想当然：
 #
