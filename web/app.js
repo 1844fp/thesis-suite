@@ -300,9 +300,17 @@ const Progress = {
 };
 
 /* ================================================================ 暗色模式
-   与 ThesisMind 一致：localStorage 键 thesis-theme，取值 light/dark/system；
-   system 时按当前小时判断（19:00–07:00 视为暗色）。防闪白的那段内联脚本在
-   index.html 的 <head> 里先跑一次，这里只负责切换与持久化。 */
+   与 ThesisMind 一致：localStorage 键 thesis-theme，取值 light/dark/system。
+
+   **"跟随系统"= 按当前小时判断（19:00–07:00 视为暗色）**，与操作系统设置无关。
+   这不是偷懒，是参考站的既定行为——我重新抓过它的页面核实：它的内联脚本就是
+   `var h = new Date().getHours(); p === "system" && (h >= 19 || h < 7)`，
+   整页 HTML 里 `prefers-color-scheme` 一次都没出现。它的取舍是"晚上打开写作工具
+   默认就是暗色"，与系统设置无关。
+
+   早先这里挂过一个 `prefers-color-scheme` 监听，与上面的判定**语义冲突**：
+   白天系统是暗色时，首屏内联脚本先给亮色、监听一触发又翻成暗色，用户看到闪一下。
+   两处判断必须同源，所以监听已移除。改动这行之前请先想清楚"跟随系统"到底指哪个系统。 */
 const Theme = {
   KEY: 'thesis-theme',
 
@@ -315,7 +323,8 @@ const Theme = {
     this.apply();
   },
 
-  /** system 是否应视为暗色。抽出来是为了让内联脚本与这里判断一致。 */
+  /** system 是否应视为暗色。**必须与 index.html 里那段防闪白脚本完全一致**，
+   *  否则首屏与后续状态会打架（见上面注释里踩过的坑）。 */
   systemIsDark() {
     const h = new Date().getHours();
     return h >= 19 || h < 7;
@@ -336,7 +345,7 @@ const Theme = {
     if (btn) {
       const p = this.get();
       btn.textContent = p === 'system' ? '🌗' : (p === 'dark' ? '🌙' : '☀️');
-      btn.title = `主题：${{ system: '跟随系统', dark: '暗色', light: '亮色' }[p] }（点击切换）`;
+      btn.title = `主题：${{ system: '跟随系统（19:00–07:00 自动暗色）', dark: '暗色', light: '亮色' }[p] }（点击切换）`;
     }
   },
 
@@ -350,12 +359,6 @@ const Theme = {
   bind() {
     const btn = $('themeToggle');
     if (btn) btn.addEventListener('click', () => this.cycle());
-    // 跟随系统时，用户改系统主题要能实时反映（不刷新页面）。
-    if (window.matchMedia) {
-      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-        if (this.get() === 'system') this.apply();
-      });
-    }
     this.apply();
   },
 };

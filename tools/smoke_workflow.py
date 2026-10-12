@@ -15,6 +15,53 @@ sys.path.insert(0, r"E:\AI\thesis-suite")
 ROOT = Path(r"E:\AI\thesis-suite")
 
 
+def code_occurrences(path: Path, needle: str) -> list[tuple[int, str]] | None:
+    """找出 ``needle`` 出现在**代码**里的位置（注释里的不算）。
+
+    做法是行级注释跟踪：逐行扫描，维护"是否在块注释中"，
+    去掉同行注释后再看 needle 是否还在。
+
+    **为什么不用更严谨的写法**：
+    * Python 的 ``tokenize`` 不能解析 JavaScript（它会把正则字面量 ``/[&<>"']/g``
+      里的 ``/`` 当成除号，进而报"未终止的字符串"——实测在 app.js 第 18 行误报）；
+    * 起 Node 子进程也不行：本沙箱对**带管道捕获的子进程**有限制
+      （``stdio: 'pipe'`` 会 EPERM，这是环境的既定边界，不是脚本缺陷）。
+
+    行级跟踪对"这行是不是注释掉的"这个判断足够可靠，而本检查要回答的正是这个问题。
+    """
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+
+    hits: list[tuple[int, str]] = []
+    in_block = False
+    for i, raw in enumerate(lines, start=1):
+        line = raw
+        if in_block:
+            end = line.find("*/")
+            if end < 0:
+                continue
+            line = line[end + 2:]
+            in_block = False
+        # 该行的块注释起点
+        start = line.find("/*")
+        if start >= 0:
+            end = line.find("*/", start + 2)
+            if end < 0:
+                in_block = True
+                line = line[:start]
+            else:
+                line = line[:start] + line[end + 2:]
+        # 行注释起点（不做引号内判断：needle 是纯粹的技术标识符，不会出现在字符串里）
+        slash = line.find("//")
+        if slash >= 0:
+            line = line[:slash]
+        if needle in line:
+            hits.append((i, raw.strip()[:100]))
+    return hits
+
+
 def main() -> int:
     from fastapi.testclient import TestClient
 
@@ -98,6 +145,24 @@ def main() -> int:
     if r.status_code == 200:
         d = r.json()
         check("导入返回 source", d.get("source_count", 0) >= 1, str(d.get("source_count")))
+
+    print("\n" + "=" * 70)
+    print("⑤ 主题逻辑必须两处同源（这是个容易在后续改动里破掉的约定）")
+    print("=" * 70)
+    # "跟随系统"的判定同时存在于 index.html（防闪白内联脚本）与 app.js（Theme）。
+    # 两处不一致会表现为"首屏闪一下再变色"。所以这里把它当不变量来守。
+    js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    check("app.js 用小时判断 system", "getHours()" in js)
+    check("app.js 不再挂 prefers-color-scheme 监听（避免与小时判断冲突）",
+          "matchMedia" not in js)
+    check("index.html 用小时判断 system", "getHours()" in html)
+    # 必须是**代码**里没有 prefers-color-scheme，注释里提到是允许的（而且解释了原因）。
+    hits = code_occurrences(ROOT / "web" / "app.js", "prefers-color-scheme")
+    check("app.js 代码里不出现 prefers-color-scheme（注释里可以）",
+          hits == [], str(hits[:1])[:160])
+    check("防闪白脚本在样式表之前",
+          html.find("thesis-theme") < html.find("/static/theme.css"))
+    check("主题切换按钮存在", 'id="themeToggle"' in html)
 
     print("\n" + "=" * 70)
     print("全部通过" if ok else "有失败项")
