@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from . import agents as agents_api  # noqa: E402
-from . import gather, review, topics, writing  # noqa: E402
+from . import gather, kb, review, topics, writing  # noqa: E402
 
 WEB_DIR = SUITE_ROOT / "web"
 
@@ -60,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(gather.router)
     app.include_router(writing.router)
     app.include_router(review.router)
+    app.include_router(kb.router)
     # 通用 agent 接口放在最后：它的路径带通配段（/{name}/{action}），
     # 先注册别的路由可以避免有人用一个叫 "topics" 的 agent 名去抢真实路由。
     app.include_router(agents_api.router)

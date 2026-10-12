@@ -23,12 +23,14 @@ from ..agents.base import context_for
 
 router = APIRouter(prefix="/api/agents", tags=["智能体"])
 
-#: 四个 agent 各自的阶段归属。前端用它在阶段侧栏上显示"这个阶段是谁在干活"。
+#: 各个 agent 归属到哪个板块。前端用它在板块侧栏上显示"这个板块是谁在干活"。
 STAGE_OF_AGENT = {
     "topic": "topic",
     "gather": "proposal",
     "writer": "draft",
     "review": "revise",
+    "integrity": "integrity",
+    "defense": "defense",
 }
 
 

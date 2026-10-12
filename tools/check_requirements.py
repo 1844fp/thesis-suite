@@ -26,11 +26,15 @@ ROOT = Path(__file__).resolve().parent.parent
 INTERNAL = {"suite", "app", "core", "thesisapp", "topiccore"}
 
 #: import 名 -> PyPI 分发名的映射（两者不同的情形）。
+#: 每一条都是踩过的：`pptx` 的包名是 `python-pptx`，只写 `pptx` 装不上；
+#: `fitz`/`pymupdf` 同属 PyMuPDF；`docx` 来自 python-docx。
 DIST_NAME = {
     "docx": "python-docx",
+    "pptx": "python-pptx",
     "yaml": "PyYAML",
     "PIL": "Pillow",
     "fitz": "PyMuPDF",
+    "pymupdf": "PyMuPDF",
     "sklearn": "scikit-learn",
     "dotenv": "python-dotenv",
     "multipart": "python-multipart",

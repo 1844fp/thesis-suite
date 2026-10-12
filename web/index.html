@@ -323,7 +323,6 @@
         <div class="row">
           <button class="btn" id="btnCheck">跑本地检查</button>
           <button class="ghost" id="btnVerifyRefs">核验参考文献真伪</button>
-          <button class="ghost" id="btnDup">查重风险自查</button>
           <button class="ghost" id="btnOpinion" disabled>生成审稿意见（需 Key）</button>
           <button class="ghost" id="btnReviewExport" disabled>导出意见书</button>
         </div>
@@ -361,9 +360,7 @@
           <div class="pmsg" id="reviewMsg"></div>
         </div>
         <div id="reviewNote"></div>
-      </div>
-      <div class="card hidden" id="dupBox"></div>
-      <div class="card hidden" id="tplBox"></div>
+      </div><div class="card hidden" id="tplBox"></div>
       <div class="card hidden" id="reviewResultCard">
         <h2>检查结果</h2>
         <div class="stat" id="reviewStat"></div>
@@ -377,6 +374,72 @@
         <h2>参考文献核验</h2>
         <div class="stat" id="verifyStat"></div>
         <div id="verifyList"></div>
+      </div>
+    </section>
+
+    <!-- ============ ⑤ 查重与降 AIGC 率 ============ -->
+    <section class="panel" id="p-integrity">
+      <div class="card">
+        <h2><span class="step">1</span>查重风险自查</h2>
+        <p class="hint">
+          这一步做两件<strong>本机能做</strong>的事：① 找出同一份稿子里高度雷同的段落；
+          ② 把参考文献拿去公开文献库核对，看题录能不能对上真实记录。
+          <strong>它不能替代学校查重</strong>——检测不了与已发表文献、网络内容、往届论文的重复。
+        </p>
+        <label class="f" for="iText">稿件正文（留空则用「写初稿」阶段的最新草稿）</label>
+        <textarea id="iText" rows="8" placeholder="粘贴稿件正文，或留空使用最新草稿"></textarea>
+        <div class="row">
+          <button class="btn" id="btnIntegrityDup">查重风险自查</button>
+          <button class="ghost" id="btnAigcScore">AI 味体检</button>
+          <button class="ghost" id="btnAigcReduce" disabled>降 AIGC 率改写</button>
+          <button class="ghost" id="btnAigcDocx" disabled>导出改写稿 Word</button>
+        </div>
+        <div class="progress" id="integrityProg">
+          <div class="bar"><i id="integrityBar"></i></div>
+          <div class="pmsg" id="integrityMsg"></div>
+        </div>
+        <div id="integrityNote"></div>
+      </div>
+      <div class="card hidden" id="integrityResultCard">
+        <h2>体检结果</h2>
+        <div class="stat" id="integrityStat"></div>
+        <div id="aigcMetrics"></div>
+        <details class="adv" id="aigcRawWrap">
+          <summary>改写后的文本</summary>
+          <div class="md" id="aigcRevised"></div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ============ ⑥ 答辩 ============ -->
+    <section class="panel" id="p-defense">
+      <div class="card">
+        <h2><span class="step">1</span>生成答辩材料</h2>
+        <p class="hint">
+          由稿件生成两样东西：<strong>答辩稿</strong>（陈述 8~10 分钟 + 预计提问与应答）与
+          <strong>演示幻灯片</strong>（每页 3~5 条要点，每条不超过 25 字——演示稿不是文档，
+          长句子投到屏幕上没人读）。内容<strong>只依据你的稿件</strong>；材料不足以支撑某一页时
+          会标注"材料不足"，而不是编。
+        </p>
+        <div class="row">
+          <button class="btn" id="btnDefenseScript">生成答辩稿</button>
+          <button class="ghost" id="btnDefenseSlides">生成幻灯片</button>
+          <button class="ghost" id="btnDefensePptx" disabled>导出 .pptx</button>
+          <button class="ghost" id="btnDefenseHtml" disabled>导出 HTML 演示稿</button>
+        </div>
+        <div class="progress" id="defenseProg">
+          <div class="bar"><i id="defenseBar"></i></div>
+          <div class="pmsg" id="defenseMsg"></div>
+        </div>
+        <div id="defenseNote"></div>
+      </div>
+      <div class="card hidden" id="defenseScriptCard">
+        <h2>答辩稿</h2>
+        <div class="md" id="defenseScriptBody"></div>
+      </div>
+      <div class="card hidden" id="defenseSlidesCard">
+        <h2>演示幻灯片</h2>
+        <div id="defenseSlidesList"></div>
       </div>
     </section>
 

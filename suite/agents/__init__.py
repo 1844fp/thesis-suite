@@ -25,11 +25,14 @@ __all__ = ["REGISTRY", "Agent", "Context", "register_all"]
 
 
 def register_all() -> None:
-    """把四个 agent 注册进表。可重复调用（``Registry.add`` 按名字覆盖）。"""
+    """把六个 agent 注册进表。可重复调用（``Registry.add`` 按名字覆盖）。"""
+    from .defense_agent import DefenseAgent
     from .gather_agent import GatherAgent
+    from .integrity_agent import IntegrityAgent
     from .review_agent import ReviewAgent
     from .topic_agent import TopicAgent
     from .writer_agent import WriterAgent
 
-    for cls in (TopicAgent, GatherAgent, WriterAgent, ReviewAgent):
+    for cls in (TopicAgent, GatherAgent, WriterAgent, ReviewAgent,
+                IntegrityAgent, DefenseAgent):
         REGISTRY.add(cls())

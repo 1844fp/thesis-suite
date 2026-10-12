@@ -95,14 +95,17 @@ def main() -> int:
 
     stages = re.findall(r'data-stage="([a-z]+)"', html)
     print(f"  HTML 里的阶段：{stages}")
-    check("五个阶段齐全",
-          set(stages) >= {"topic", "proposal", "draft", "revise", "defense"},
-          str(stages))
+    expected_stages = {"topic", "proposal", "draft", "revise", "integrity", "defense"}
+    # 阶段按钮由 app.js 注入（HTML 里可能没有静态那一份），所以两边都看
+    js_all = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    missing = {s for s in expected_stages if f"id: '{s}'" not in js_all and s not in stages}
+    check("六个板块齐全", not missing, f"缺 {sorted(missing)}")
 
     panels = re.findall(r'id="(p-[a-z]+)"', html)
     print(f"  面板容器：{panels}")
-    check("四个功能面板都在",
-          set(panels) >= {"p-topics", "p-gather", "p-writing", "p-review"},
+    check("六个面板都在",
+          set(panels) >= {"p-topics", "p-gather", "p-writing", "p-review",
+                          "p-integrity", "p-defense"},
           str(panels))
 
     # 旧的四个页签按钮不应该再出现（已经改成阶段）

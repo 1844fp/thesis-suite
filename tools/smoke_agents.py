@@ -24,13 +24,13 @@ def main() -> int:
     client = TestClient(create_app())
 
     print("=" * 70)
-    print("① 注册表：四个 agent 与各自的动作")
+    print("① 注册表：六个 agent 与各自的动作")
     print("=" * 70)
     r = client.get("/api/agents")
     check("GET /api/agents 200", r.status_code == 200)
     data = r.json()
     agents = {a["name"]: a for a in data["agents"]}
-    check("注册了四个 agent", set(agents) == {"topic", "gather", "writer", "review"},
+    check("注册了六个 agent", set(agents) == {"topic", "gather", "writer", "review", "integrity", "defense"},
           str(sorted(agents)))
     for name, title, stage in (("topic", "题目生成", "topic"), ("gather", "资料获取", "proposal"),
                                ("writer", "论文写作", "draft"), ("review", "评估", "revise")):
@@ -78,7 +78,7 @@ def main() -> int:
     r = client.get(f"/api/agents/state?sid={sid}")
     check("GET /api/agents/state 200", r.status_code == 200)
     states = {a["name"]: a for a in r.json().get("agents") or []}
-    check("返回四个 agent 的状态", len(states) == 4, str(sorted(states)))
+    check("返回六个 agent 的状态", len(states) == 6, str(sorted(states)))
     topic_state = states.get("topic") or {}
     check("topic 记录了成功次数", topic_state.get("ok_count", 0) >= 1,
           f"ok={topic_state.get('ok_count')} failed={topic_state.get('failed_count')}")

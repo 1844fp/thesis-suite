@@ -200,18 +200,24 @@ async function sse(path, body, onEvent) {
    一个阶段可以对应一个 panel，将来也可以几个阶段共用一个 panel，
    所以不把两者混成一个概念。 */
 const STAGES = [
-  { id: 'topic',    n: '1', name: '定题目',   desc: '先有一个能写下去的题', panel: 'topics' },
-  { id: 'proposal', n: '2', name: '开题报告', desc: '把文献与依据找齐',     panel: 'gather' },
-  { id: 'draft',    n: '3', name: '写初稿',   desc: '逐章生成正文',         panel: 'writing' },
-  { id: 'revise',   n: '4', name: '修改与评估', desc: '查问题、出意见书',   panel: 'review' },
-  { id: 'defense',  n: '5', name: '答辩材料', desc: '答辩稿与演示提纲',     panel: 'review' },
+  { id: 'topic',     n: '1', name: '定题目',          desc: '出题 + 建可检索的知识库', panel: 'topics' },
+  { id: 'proposal',  n: '2', name: '开题报告',        desc: '导入资料、抽成证据、核验',  panel: 'gather' },
+  { id: 'draft',     n: '3', name: '写初稿',          desc: '依据三层来源逐章生成',      panel: 'writing' },
+  { id: 'revise',    n: '4', name: '修改与评估',      desc: '53 个检查器 + 按意见改写',  panel: 'review' },
+  { id: 'integrity', n: '5', name: '查重与降 AIGC 率', desc: '内部重复自查 + AI 味体检',  panel: 'integrity' },
+  { id: 'defense',   n: '6', name: '答辩',            desc: '答辩稿与演示幻灯片',        panel: 'defense' },
 ];
 
 let CURRENT_STAGE = 'topic';
 
-/** 阶段是否可用。答辩材料尚未实现——明确禁用，而不是让用户点进去看到空白。 */
+/** 板块是否可用。
+ *
+ *  现在六个板块都已实现，所以恒为 true——但**保留这个函数**而不是删掉：
+ *  它是"某个板块尚未就绪时如何呈现"的唯一开关，下一个板块做之前会再用到。
+ *  直接写死 true 会让下次加板块时忘了处理这种情况。
+ */
 function stageEnabled(id) {
-  return id !== 'defense';
+  return STAGES.some((s) => s.id === id);
 }
 
 function buildStages() {
@@ -386,7 +392,9 @@ const NEXT_OF_PANEL = {
   topics: { to: 'proposal', label: '下一步：找文献与依据（开题报告）' },
   gather: { to: 'draft', label: '下一步：逐章写初稿' },
   writing: { to: 'revise', label: '下一步：跑检查、出意见书（修改与评估）' },
-  review: null,                       // 最后一站，没有下一步
+  review: { to: 'integrity', label: '下一步：查重自查与降 AIGC 率' },
+  integrity: { to: 'defense', label: '下一步：生成答辩稿与演示幻灯片' },
+  defense: null,                      // 最后一站，没有下一步
 };
 
 /** 注入"下一步"区块的样式。
@@ -820,14 +828,16 @@ async function runDuplication() {
 }
 
 function renderDuplication(data) {
-  const host = $('dupBox');
-  host.classList.remove('hidden');
+  // 查重结果渲染到⑤板块的容器里。原先它渲染在「修改与评估」的 dupBox，
+  // 但查重已经独立成板块——结果必须出现在用户点按钮的那个板块，
+  // 否则他点完看不到任何变化，会以为没生效。
+  const host = $('integrityResultCard') ? $('integrityStat') : null;
+  const container = $('integrityNote');
   const riskLabel = { high: '偏高', medium: '需注意', low: '未发现明显问题' };
   const riskCls = { high: 'bad', medium: 'warn', low: 'ok' };
   const internal = data.internal || {};
   const refs = data.references || {};
-  host.innerHTML = `
-    <h2>查重风险自查</h2>
+  const html = `
     <div class="note ${riskCls[data.risk] || ''}">
       内部重复风险：<strong>${riskLabel[data.risk] || data.risk}</strong>
       —— 检查了 ${internal.paragraphs || 0} 个段落，发现 ${internal.duplicate_pair_count || 0} 处高度重复。
@@ -842,7 +852,7 @@ function renderDuplication(data) {
           <td style="font-size:12.5px">第 ${p.b_index} 段：${esc(p.b_preview)}</td>
         </tr>`).join('')}
       </table>` : '<div class="note">未发现文档内部的段落重复。</div>'}
-    <h2 style="margin-top:16px">参考文献可核验性</h2>
+    <h3 style="font-size:14px;margin:16px 0 6px">参考文献可核验性</h3>
     <div class="stat">
       <div>已核验<b>${refs.checked || 0}</b></div>
       <div>查不到<b>${(refs.unverifiable || []).length}</b></div>
@@ -853,7 +863,13 @@ function renderDuplication(data) {
       ${refs.unverifiable.map((u) => `<tr><td>${esc(u.title)}${u.doi ? `（DOI: ${esc(u.doi)}）` : ''}</td></tr>`).join('')}
     </table>` : ''}
     <div class="note">${esc(refs.limits || '')}</div>`;
-  host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  if (container) {
+    container.innerHTML = html;
+    $('integrityResultCard').classList.remove('hidden');
+    $('integrityResultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  return host;
 }
 
 /** 学校模板比对。 */
@@ -937,6 +953,206 @@ async function exportDocx() {
     note($('writeNote'), 'err', '导出 Word 失败：' + esc(err.message));
   } finally {
     btn.disabled = false; btn.textContent = '导出 Word';
+  }
+}
+
+/* ====================================================== ⑤ 查重与降 AIGC 率 */
+const Integrity = { revised: '', slides: null, script: '' };
+
+/** 统一在浏览器里落盘一个 base64 二进制。 */
+function downloadBinary(base64, filename, contentType) {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([bytes], { type: contentType }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function integrityText() {
+  return $('iText').value.trim();
+}
+
+async function runIntegrityDup() {
+  const btn = $('btnIntegrityDup');
+  btn.disabled = true; btn.textContent = '自查中…';
+  note($('integrityNote'), '', '');
+  setProgress($('integrityBar'), $('integrityMsg'), $('integrityProg'), 0.4, '正在做内部重复检测与文献核验…');
+  try {
+    const data = await callAgent('integrity', 'duplication',
+      { text: integrityText(), ref_limit: 8 });
+    if (!data.ok) throw new Error(data.error || '自查失败');
+    renderDuplication(data);
+    note($('integrityNote'), 'ok', '自查完成，结果见下方。');
+  } catch (err) {
+    note($('integrityNote'), 'err', '自查失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '查重风险自查';
+    hideProgress($('integrityProg'));
+  }
+}
+
+async function runAigcScore() {
+  const btn = $('btnAigcScore');
+  btn.disabled = true; btn.textContent = '体检中…';
+  note($('integrityNote'), '', '');
+  setProgress($('integrityBar'), $('integrityMsg'), $('integrityProg'), 0.4, '正在做本地风格体检…');
+  try {
+    const data = await callAgent('integrity', 'aigc_score', { text: integrityText() });
+    if (data.ok === false) throw new Error(data.error || '体检失败');
+    renderAigc(data, 'score');
+    // 体检通过后才允许改写：先看清问题再改，避免"一键降重"式盲改
+    $('btnAigcReduce').disabled = false;
+  } catch (err) {
+    note($('integrityNote'), 'err', '体检失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = 'AI 味体检';
+    hideProgress($('integrityProg'));
+  }
+}
+
+async function runAigcReduce() {
+  const btn = $('btnAigcReduce');
+  btn.disabled = true; btn.textContent = '改写中…';
+  setProgress($('integrityBar'), $('integrityMsg'), $('integrityProg'), 0.5,
+    '分段改写 + 保真校验 + 复检，可能要一会儿…');
+  try {
+    const data = await callAgent('integrity', 'aigc_reduce', { text: integrityText() });
+    if (data.ok === false) throw new Error(data.error || '改写失败');
+    renderAigc(data, 'reduce');
+    Integrity.revised = data.text || data.revised || '';
+    if (Integrity.revised) {
+      $('btnAigcDocx').disabled = false;
+      $('aigcRevised').textContent = Integrity.revised;
+      $('aigcRawWrap').classList.remove('hidden');
+    }
+  } catch (err) {
+    note($('integrityNote'), 'err', '改写失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '降 AIGC 率改写';
+    hideProgress($('integrityProg'));
+  }
+}
+
+async function exportAigcDocx() {
+  const btn = $('btnAigcDocx');
+  btn.disabled = true; btn.textContent = '导出中…';
+  try {
+    const data = await callAgent('integrity', 'aigc_export_docx',
+      { text: Integrity.revised, title: $('wTitle').value.trim() || '改写稿' });
+    if (!data.ok) throw new Error(data.error || '导出失败');
+    downloadBinary(data.content_base64, data.filename, data.content_type);
+    note($('integrityNote'), 'ok', `已导出 Word（${Math.round((data.bytes || 0) / 1024)} KB）。`);
+  } catch (err) {
+    note($('integrityNote'), 'err', '导出失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '导出改写稿 Word';
+  }
+}
+
+/** 渲染体检/改写结果。**免责声明必须显示出来**，不能只放在返回里。 */
+function renderAigc(data, kind) {
+  $('integrityResultCard').classList.remove('hidden');
+  const before = data.before ?? data.before_index ?? data.index ?? data.ai_index;
+  const after = data.after ?? data.after_index;
+  $('integrityStat').innerHTML = [
+    ['AI 味指数', before ?? '—'],
+    ...(kind === 'reduce' ? [['改写后', after ?? '—']] : []),
+    ['改动段落', (data.changed ?? data.changed_count ?? '—')],
+    ['退回原文', (data.reverted ?? data.reverted_count ?? '—')],
+  ].map(([k, v]) => `<div>${k}<b>${v}</b></div>`).join('');
+
+  const disc = data.disclaimer || data.limits || '';
+  const metrics = data.metrics || data.items || [];
+  $('aigcMetrics').innerHTML =
+    (disc ? `<div class="note warn">${esc(disc)}</div>` : '') +
+    (Array.isArray(metrics) && metrics.length
+      ? `<table class="list"><tr><th>指标</th><th style="width:90px">数值</th><th>说明</th></tr>
+         ${metrics.map((m) => `<tr>
+            <td>${esc(m.name || m.label || '')}</td>
+            <td>${esc(String(m.value ?? m.score ?? '—'))}</td>
+            <td style="font-size:12.5px;color:var(--ink-2)">${esc(m.desc || m.note || '')}</td>
+         </tr>`).join('')}</table>`
+      : '');
+  $('integrityResultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/* ================================================================ ⑥ 答辩 */
+async function runDefenseScript() {
+  const btn = $('btnDefenseScript');
+  btn.disabled = true; btn.textContent = '生成中…';
+  note($('defenseNote'), '', '');
+  setProgress($('defenseBar'), $('defenseMsg'), $('defenseProg'), 0.4, '正在写答辩稿…');
+  try {
+    const data = await callAgent('defense', 'script', {});
+    if (!data.ok) throw new Error(data.error || '生成失败');
+    Integrity.script = data.markdown || '';
+    $('defenseScriptBody').innerHTML = md(data.markdown || '');
+    $('defenseScriptCard').classList.remove('hidden');
+    note($('defenseNote'), 'ok', '答辩稿已生成。陈述稿用于口播，预计提问用于准备应答。');
+  } catch (err) {
+    note($('defenseNote'), 'err', '生成答辩稿失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '生成答辩稿';
+    hideProgress($('defenseProg'));
+  }
+}
+
+async function runDefenseSlides() {
+  const btn = $('btnDefenseSlides');
+  btn.disabled = true; btn.textContent = '生成中…';
+  setProgress($('defenseBar'), $('defenseMsg'), $('defenseProg'), 0.4, '正在生成幻灯片…');
+  try {
+    const data = await callAgent('defense', 'slides', {});
+    if (!data.ok) throw new Error(data.error || '生成失败');
+    Integrity.slides = data.slides;
+    renderSlides(data.slides);
+    $('btnDefensePptx').disabled = false;
+    $('btnDefenseHtml').disabled = false;
+    const pptxOk = data.pptx_available;
+    note($('defenseNote'), pptxOk ? 'ok' : 'warn',
+      pptxOk ? '幻灯片已生成，可导出 .pptx 或单文件 HTML。'
+             : '幻灯片已生成。注意：本机没有 python-pptx，<strong>.pptx 导出不可用</strong>，请用 HTML 演示稿。');
+    if (!pptxOk) $('btnDefensePptx').disabled = true;
+  } catch (err) {
+    note($('defenseNote'), 'err', '生成幻灯片失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '生成幻灯片';
+    hideProgress($('defenseProg'));
+  }
+}
+
+function renderSlides(slides) {
+  const list = (slides || {}).slides || [];
+  $('defenseSlidesCard').classList.remove('hidden');
+  $('defenseSlidesList').innerHTML = list.map((s, i) => `
+    <div class="topic">
+      <h3><span class="idx">${i + 1}</span>${esc(s.title || '')}</h3>
+      ${(s.bullets || []).length ? `<ul style="margin:6px 0 0 18px;font-size:13.5px">
+        ${s.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
+      ${s.notes ? `<div style="margin-top:8px;font-size:12.5px;color:var(--ink-3)">讲稿备注：${esc(s.notes)}</div>` : ''}
+    </div>`).join('') || '<div class="note">没有生成任何幻灯片。</div>';
+}
+
+async function exportDefense(kind) {
+  const btn = $(kind === 'pptx' ? 'btnDefensePptx' : 'btnDefenseHtml');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = '导出中…';
+  try {
+    const data = await callAgent('defense', kind, { slides: Integrity.slides });
+    if (!data.ok) throw new Error(data.error || '导出失败');
+    if (kind === 'pptx') {
+      downloadBinary(data.content_base64, data.filename, data.content_type);
+    } else {
+      download(data.html, data.filename);
+    }
+    note($('defenseNote'), 'ok', `已导出 ${data.filename}（${Math.round((data.bytes || 0) / 1024)} KB）。`);
+  } catch (err) {
+    note($('defenseNote'), 'err', '导出失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = label;
   }
 }
 
@@ -1443,6 +1659,18 @@ $('btnDraftDocx') && $('btnDraftDocx').addEventListener('click', exportDocx);
 $('btnRevise') && $('btnRevise').addEventListener('click', runRevise);
 $('btnDup') && $('btnDup').addEventListener('click', runDuplication);
 $('btnTemplate') && $('btnTemplate').addEventListener('click', runTemplateCompare);
+
+// ⑤ 查重与降 AIGC 率
+$('btnIntegrityDup') && $('btnIntegrityDup').addEventListener('click', runIntegrityDup);
+$('btnAigcScore') && $('btnAigcScore').addEventListener('click', runAigcScore);
+$('btnAigcReduce') && $('btnAigcReduce').addEventListener('click', runAigcReduce);
+$('btnAigcDocx') && $('btnAigcDocx').addEventListener('click', exportAigcDocx);
+
+// ⑥ 答辩
+$('btnDefenseScript') && $('btnDefenseScript').addEventListener('click', runDefenseScript);
+$('btnDefenseSlides') && $('btnDefenseSlides').addEventListener('click', runDefenseSlides);
+$('btnDefensePptx') && $('btnDefensePptx').addEventListener('click', () => exportDefense('pptx'));
+$('btnDefenseHtml') && $('btnDefenseHtml').addEventListener('click', () => exportDefense('html'));
 $('btnReviewExport').addEventListener('click', () => {
   if (Review.markdown) download(Review.markdown, '审稿意见书.md');
 });
