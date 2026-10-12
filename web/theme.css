@@ -511,3 +511,63 @@ footer a:hover { color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ===========================================================================
+   本轮新增：agent 状态面板、大纲、查重与模板结果的样式
+   ---------------------------------------------------------------------------
+   命名带功能前缀（agent- / outline-），避免与设计系统的通用类
+   （.card / .note / .list）混在一起后看不出归属。
+   =========================================================================== */
+
+/* ---- 侧栏里的四个 agent 状态 ---- */
+.agent-head {
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--tm-border, var(--line));
+  font-size: 12px; color: var(--tm-muted-foreground, var(--ink-3));
+  letter-spacing: .04em;
+}
+.agent-panel { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.agent-empty { font-size: 12px; color: var(--tm-muted-foreground, var(--ink-3)); line-height: 1.5; }
+.agent-row {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr) auto;
+  gap: 6px; align-items: center;
+  font-size: 12.5px; padding: 3px 4px; border-radius: 6px;
+}
+.agent-row .agent-icon { text-align: center; color: var(--tm-muted-foreground, var(--ink-3)); }
+.agent-row .agent-name { white-space: nowrap; }
+.agent-row .agent-text {
+  color: var(--tm-muted-foreground, var(--ink-3));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.agent-row .agent-count { font-size: 11px; color: var(--tm-muted-foreground, var(--ink-3)); }
+.agent-row.busy { background: var(--brand-soft); }
+.agent-row.busy .agent-icon { color: var(--brand); animation: agent-spin 1.4s linear infinite; }
+.agent-row.busy .agent-text { color: var(--ink); }
+.agent-row.done .agent-icon { color: var(--tm-success, var(--ok)); }
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+
+/* 阶段按钮上的"正在干活"指示：状态点变成会呼吸的圆点 */
+.stage.busy .stage-dot {
+  background: var(--brand); border-color: var(--brand);
+  animation: stage-pulse 1.2s ease-in-out infinite;
+}
+@keyframes stage-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ---- 大纲 ---- */
+.outline-box:empty { display: none; }
+.outline-box {
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--radius, 8px);
+  border: 1px solid var(--tm-border, var(--line));
+  background: var(--tm-muted, #fafbfc);
+  max-height: 420px; overflow: auto;
+}
+.outline-sec { padding: 6px 0; border-bottom: 1px dashed var(--tm-border, var(--line)); }
+.outline-sec:last-child { border-bottom: 0; }
+.outline-title { font-weight: 600; font-size: 14px; }
+.outline-focus { font-weight: 400; color: var(--tm-muted-foreground, var(--ink-3)); font-size: 12.5px; }
+.outline-sub { margin: 6px 0 0 14px; font-size: 13px; }
+.outline-sub strong { font-weight: 600; }
+.outline-line { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
+.outline-need { color: var(--tm-warning, var(--warn)); }
+

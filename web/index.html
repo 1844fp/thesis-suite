@@ -120,6 +120,10 @@
     <div class="sidebar-foot">
       <div class="stage-current">当前阶段：<b id="stageNow">定题目</b></div>
       <div id="stageSummary" class="stage-summary"></div>
+      <!-- 四个 agent 的实时状态。由 app.js 的 AgentPanel 每 1.5 秒刷新一次：
+           谁在干活、上次干了什么、成功/失败累计。 -->
+      <div class="agent-head">助手状态</div>
+      <div id="agentPanel" class="agent-panel"></div>
       <div>
         <a href="/api/docs" target="_blank" rel="noopener">API 文档</a> ·
         <a href="/api/health" target="_blank" rel="noopener">服务自检</a> ·
@@ -286,8 +290,11 @@
         </div>
         <div class="row">
           <button class="btn" id="btnDraft">逐章生成</button>
+          <button class="ghost" id="btnOutline">生成大纲</button>
+          <button class="ghost" id="btnDraftDocx" disabled>导出 Word</button>
           <button class="ghost" id="btnDraftExport" disabled>导出 Markdown</button>
         </div>
+        <div id="outlineBox" class="outline-box"></div>
         <div class="progress" id="writeProg">
           <div class="bar"><i id="writeBar"></i></div>
           <div class="pmsg" id="writeMsg"></div>
@@ -316,15 +323,47 @@
         <div class="row">
           <button class="btn" id="btnCheck">跑本地检查</button>
           <button class="ghost" id="btnVerifyRefs">核验参考文献真伪</button>
+          <button class="ghost" id="btnDup">查重风险自查</button>
           <button class="ghost" id="btnOpinion" disabled>生成审稿意见（需 Key）</button>
           <button class="ghost" id="btnReviewExport" disabled>导出意见书</button>
         </div>
+
+        <details class="adv" style="margin-top:14px">
+          <summary>按评估意见改写某一章（需要 Key）</summary>
+          <div>
+            <label class="f" for="reviseHeading">要改写的章节标题（会在最新稿件里匹配）</label>
+            <input type="text" id="reviseHeading" placeholder="例如：第2章">
+            <div class="row" style="margin-top:10px">
+              <button class="ghost" id="btnRevise">按意见改写</button>
+              <span style="font-size:12.5px;color:var(--ink-3)">
+                只改被指出问题的句子，其余保持原样；无法依据现有材料解决的会如实列出，不硬改。
+              </span>
+            </div>
+          </div>
+        </details>
+
+        <details class="adv">
+          <summary>与学校模板比对格式（不需要 Key）</summary>
+          <div>
+            <label class="f" for="tplFile">学校模板文件（.docx）</label>
+            <input type="file" id="tplFile" accept=".docx">
+            <div class="row" style="margin-top:10px">
+              <button class="ghost" id="btnTemplate">与模板比对</button>
+              <span style="font-size:12.5px;color:var(--ink-3)">
+                留空稿件时，自动用「写初稿」阶段的最新草稿来比。
+              </span>
+            </div>
+          </div>
+        </details>
+
         <div class="progress" id="reviewProg">
           <div class="bar"><i id="reviewBar"></i></div>
           <div class="pmsg" id="reviewMsg"></div>
         </div>
         <div id="reviewNote"></div>
       </div>
+      <div class="card hidden" id="dupBox"></div>
+      <div class="card hidden" id="tplBox"></div>
       <div class="card hidden" id="reviewResultCard">
         <h2>检查结果</h2>
         <div class="stat" id="reviewStat"></div>

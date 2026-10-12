@@ -661,6 +661,285 @@ function bindDropzone() {
   window.addEventListener('drop', (e) => e.preventDefault());
 }
 
+/* ============================================================ Agent 实时状态
+   四个助手在后端已经是真 agent（可寻址、共享状态、每次动作留事件）。
+   这里把它们的实时状态显示出来——**这就是"实时更新子 agent"那件事的可见部分**。
+
+   为什么用轮询而不是 SSE：agent 的动作是"请求驱动"的短过程（秒级到分钟级），
+   而发起动作的请求本身已经有自己的 SSE 流在处理进度。再开一条状态流会多一套
+   连接管理，收益却只是把刷新从 1.5 秒提到瞬时。轮询足够，而且失败时静默重试即可、
+   不需要重连逻辑。 */
+const AgentPanel = {
+  timer: null,
+  state: [],
+
+  async refresh() {
+    const sid = SID.get();
+    if (!sid) { this.paint([]); return; }
+    try {
+      const data = await api(`/api/agents/state?sid=${encodeURIComponent(sid)}`);
+      this.paint(data.agents || []);
+    } catch (_) {
+      // 轮询失败不弹错误：会话可能刚过期，让用户继续操作，下次轮询自然恢复。
+    }
+  },
+
+  paint(agents) {
+    this.state = agents;
+    // 1) 侧栏阶段按钮上显示"这个阶段的 agent 正在干活"
+    document.querySelectorAll('.stage').forEach((btn) => {
+      const sid_ = btn.dataset.stage;
+      const a = agents.find((x) => x.stage === sid_);
+      btn.classList.toggle('busy', !!(a && a.busy));
+      const dot = btn.querySelector('.stage-dot');
+      if (dot && a && a.busy) dot.setAttribute('title', `${a.title} 正在：${a.current?.message || a.current?.action || ''}`);
+    });
+
+    // 2) 底部状态条：四个 agent 各一行
+    const host = $('agentPanel');
+    if (!host) return;
+    if (!agents.length) {
+      host.innerHTML = '<div class="agent-empty">开始使用后，这里会显示四个助手各自在做什么。</div>';
+      return;
+    }
+    host.innerHTML = agents.map((a) => {
+      const busy = a.busy;
+      const last = a.last || {};
+      const icon = busy ? '◐' : (a.failed_count && !a.ok_count ? '✕' : (a.total ? '●' : '○'));
+      const cls = busy ? 'busy' : (a.total ? 'done' : 'idle');
+      const text = busy
+        ? (a.current?.message || a.current?.action || '处理中…')
+        : (a.total ? `${last.action || ''} · ${last.seconds ?? ''}s` : '还没用过');
+      return `<div class="agent-row ${cls}" data-agent="${a.name}">
+          <span class="agent-icon">${icon}</span>
+          <span class="agent-name">${esc(a.title)}</span>
+          <span class="agent-text" title="${esc(text)}">${esc(text)}</span>
+          <span class="agent-count">${a.ok_count}✓${a.failed_count ? ' ' + a.failed_count + '✕' : ''}</span>
+        </div>`;
+    }).join('');
+  },
+
+  start() {
+    if (this.timer) return;
+    this.refresh();
+    this.timer = setInterval(() => this.refresh(), 1500);
+  },
+};
+
+/* ============================================================ 新功能接线
+   五个补齐的能力都挂在对应阶段的工具栏上。它们都走**通用 agent 接口**
+   （/api/agents/{name}/{action}），而不是各自单独的路由——
+   这样前端只需要一个调用函数，加新动作也不用改这里。 */
+async function callAgent(name, action, body) {
+  const payload = Object.assign({ sid: SID.get() }, body || {});
+  const data = await api(`/api/agents/${name}/${action}`, { method: 'POST', body: payload });
+  if (data.sid) SID.set(data.sid);
+  return data;
+}
+
+/** 由大纲生成章节结构，填进写作阶段的章节框。 */
+async function runOutline() {
+  const title = $('wTitle').value.trim() || ($('tDiscipline').value.trim() ? '' : '');
+  if (!title) { note($('writeNote'), 'err', '请先填写论文题目。'); return; }
+  if (!LLM.ready) { note($('writeNote'), 'err', '生成大纲需要模型：请先填入 API Key。'); return; }
+  const btn = $('btnOutline');
+  btn.disabled = true; btn.textContent = '生成中…';
+  note($('writeNote'), '', '');
+  try {
+    const genreName = ($('wGenre').selectedOptions[0] || {}).textContent || '';
+    const sections = $('wSections').value.split('\n').map((s) => s.trim()).filter(Boolean);
+    const data = await callAgent('topic', 'outline', { title, genre_name: genreName, sections });
+    if (!data.ok) throw new Error(data.error || '生成失败');
+    renderOutline(data.outline);
+    if (data.section_text) $('wSections').value = data.section_text;
+    note($('writeNote'), 'ok', '大纲已生成并填入下方章节结构，可直接逐章生成；也可以手工调整后再写。');
+  } catch (err) {
+    note($('writeNote'), 'err', '生成大纲失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '生成大纲';
+  }
+}
+
+function renderOutline(outline) {
+  const host = $('outlineBox');
+  const secs = (outline || {}).sections || [];
+  if (!secs.length) { host.innerHTML = ''; return; }
+  host.innerHTML = secs.map((s) => `
+    <div class="outline-sec">
+      <div class="outline-title">${esc(s.title)}${s.focus ? ` <span class="outline-focus">${esc(s.focus)}</span>` : ''}</div>
+      ${(s.children || []).map((c) => `
+        <div class="outline-sub">
+          <strong>${esc(c.title)}</strong>
+          ${(c.points || []).length ? `<div class="outline-line">要点：${c.points.map(esc).join('；')}</div>` : ''}
+          ${(c.needs || []).length ? `<div class="outline-line outline-need">需要材料：${c.needs.map(esc).join('；')}</div>` : ''}
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+/** 按评估意见改写某一章。 */
+async function runRevise() {
+  const heading = $('reviseHeading').value.trim();
+  if (!heading) { note($('reviewNote'), 'err', '请填写要改写的章节标题（例如「第2章」）。'); return; }
+  if (!LLM.ready) { note($('reviewNote'), 'err', '按意见改写需要模型：请先填入 API Key。'); return; }
+  const btn = $('btnRevise');
+  btn.disabled = true; btn.textContent = '改写中…';
+  setProgress($('reviewBar'), $('reviewMsg'), $('reviewProg'), 0.5, '正在按意见定点改写…');
+  try {
+    const data = await callAgent('writer', 'revise', { heading });
+    if (!data.ok) throw new Error(data.error || '改写失败');
+    renderDraft(data.draft);
+    const changes = (data.changes || []).map((c) => `· ${c.what}${c.why ? `（${c.why}）` : ''}`).join('<br>');
+    const unsolved = (data.unsolved || []).map((x) => `· ${x}`).join('<br>');
+    note($('reviewNote'), (data.unsolved || []).length ? 'warn' : 'ok',
+      `<strong>改写完成</strong>（第 ${data.version_count} 版，可回退）。` +
+      (changes ? `<br>改动：<br>${changes}` : '') +
+      (unsolved ? `<br><strong>材料不足、未解决：</strong><br>${unsolved}` : ''));
+  } catch (err) {
+    note($('reviewNote'), 'err', '改写失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '按意见改写';
+    hideProgress($('reviewProg'));
+  }
+}
+
+/** 查重风险自查。 */
+async function runDuplication() {
+  const btn = $('btnDup');
+  btn.disabled = true; btn.textContent = '自查中…';
+  setProgress($('reviewBar'), $('reviewMsg'), $('reviewProg'), 0.4, '正在做内部重复检测与文献核验…');
+  try {
+    const data = await callAgent('review', 'duplication', { text: $('rText').value, ref_limit: 8 });
+    if (!data.ok) throw new Error(data.error || '自查失败');
+    renderDuplication(data);
+  } catch (err) {
+    note($('reviewNote'), 'err', '查重自查失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '查重风险自查';
+    hideProgress($('reviewProg'));
+  }
+}
+
+function renderDuplication(data) {
+  const host = $('dupBox');
+  host.classList.remove('hidden');
+  const riskLabel = { high: '偏高', medium: '需注意', low: '未发现明显问题' };
+  const riskCls = { high: 'bad', medium: 'warn', low: 'ok' };
+  const internal = data.internal || {};
+  const refs = data.references || {};
+  host.innerHTML = `
+    <h2>查重风险自查</h2>
+    <div class="note ${riskCls[data.risk] || ''}">
+      内部重复风险：<strong>${riskLabel[data.risk] || data.risk}</strong>
+      —— 检查了 ${internal.paragraphs || 0} 个段落，发现 ${internal.duplicate_pair_count || 0} 处高度重复。
+    </div>
+    <div class="note warn">${esc(data.disclaimer || '')}</div>
+    ${(internal.duplicate_pairs || []).length ? `
+      <table class="list">
+        <tr><th style="width:70px">相似度</th><th>段落 A</th><th>段落 B</th></tr>
+        ${internal.duplicate_pairs.slice(0, 8).map((p) => `<tr>
+          <td>${p.similarity}</td>
+          <td style="font-size:12.5px">第 ${p.a_index} 段：${esc(p.a_preview)}</td>
+          <td style="font-size:12.5px">第 ${p.b_index} 段：${esc(p.b_preview)}</td>
+        </tr>`).join('')}
+      </table>` : '<div class="note">未发现文档内部的段落重复。</div>'}
+    <h2 style="margin-top:16px">参考文献可核验性</h2>
+    <div class="stat">
+      <div>已核验<b>${refs.checked || 0}</b></div>
+      <div>查不到<b>${(refs.unverifiable || []).length}</b></div>
+      <div>无法确认<b>${(refs.tally || {}).inconclusive || 0}</b></div>
+    </div>
+    ${(refs.unverifiable || []).length ? `<table class="list">
+      <tr><th>在公开文献库里查不到</th></tr>
+      ${refs.unverifiable.map((u) => `<tr><td>${esc(u.title)}${u.doi ? `（DOI: ${esc(u.doi)}）` : ''}</td></tr>`).join('')}
+    </table>` : ''}
+    <div class="note">${esc(refs.limits || '')}</div>`;
+  host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/** 学校模板比对。 */
+async function runTemplateCompare() {
+  const tplFile = $('tplFile').files[0];
+  if (!tplFile) { note($('reviewNote'), 'err', '请先选择学校模板文件（.docx）。'); return; }
+  const btn = $('btnTemplate');
+  btn.disabled = true; btn.textContent = '比对中…';
+  try {
+    const b64 = await fileToBase64(tplFile);
+    // 参数契约与后端一致：base64 字符串走 *_b64 字段。
+    // 早先我在这里把文件名和内容拼成一个字符串，那种约定很脆——后端稍改就静默不匹配。
+    const data = await callAgent('review', 'template', { template_b64: b64 });
+    if (!data.ok) throw new Error(data.error || '比对失败');
+    renderTemplate(data);
+  } catch (err) {
+    note($('reviewNote'), 'err', '模板比对失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '与模板比对';
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const s = String(fr.result || '');
+      resolve(s.slice(s.indexOf(',') + 1));
+    };
+    fr.onerror = () => reject(new Error('读取文件失败'));
+    fr.readAsDataURL(file);
+  });
+}
+
+function renderTemplate(data) {
+  const host = $('tplBox');
+  host.classList.remove('hidden');
+  const tpl = data.template || {};
+  const rows = Object.entries(tpl.styles || {}).map(([k, v]) => `
+    <tr><td>${esc(k)}</td><td>${v.size_pt ?? '—'}</td>
+        <td>${esc(v.east_asia_font || v.font || '—')}</td>
+        <td>${v.line_spacing ?? '—'}</td></tr>`).join('');
+  host.innerHTML = `
+    <h2>学校模板比对</h2>
+    <div class="note ${data.conform ? 'ok' : 'warn'}">
+      ${data.conform ? '稿件格式与模板一致。' : `发现 <strong>${(data.diffs || []).length}</strong> 处与模板不一致。`}
+    </div>
+    <h3 style="font-size:14px;margin:12px 0 6px">从模板识别出的格式</h3>
+    <table class="list">
+      <tr><th>样式</th><th style="width:80px">字号(pt)</th><th style="width:110px">中文字体</th><th style="width:80px">行距</th></tr>
+      ${rows || '<tr><td colspan="4">没能从模板里读出样式（可能模板用的是直接格式而非样式）</td></tr>'}
+    </table>
+    ${(data.diffs || []).length ? `
+      <h3 style="font-size:14px;margin:14px 0 6px">不一致项</h3>
+      <table class="list">
+        <tr><th>项目</th><th style="width:110px">模板要求</th><th style="width:110px">你的稿件</th></tr>
+        ${data.diffs.map((d) => `<tr><td>${esc(d.item)}</td><td>${esc(String(d.expected))}</td><td>${esc(String(d.actual))}</td></tr>`).join('')}
+      </table>` : ''}
+    <div class="note">${esc(data.limits || '')}</div>`;
+  host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/** 导出 Word。走 agent 接口拿到 base64，再在浏览器里落盘。 */
+async function exportDocx() {
+  const btn = $('btnDraftDocx');
+  btn.disabled = true; btn.textContent = '导出中…';
+  try {
+    const data = await callAgent('writer', 'export_docx', {});
+    if (!data.ok) throw new Error(data.error || '导出失败');
+    const bin = atob(data.content_base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: data.content_type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = data.filename || '稿件.docx';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    note($('writeNote'), 'ok', `已导出 Word（${Math.round((data.bytes || 0) / 1024)} KB）。`);
+  } catch (err) {
+    note($('writeNote'), 'err', '导出 Word 失败：' + esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '导出 Word';
+  }
+}
+
 function renderGather(items) {
   Gather.items = items || [];
   const card = $('gatherResultCard');
@@ -1107,6 +1386,8 @@ async function boot() {
 
   bindDropzone();
   injectNextButtons();
+  // agent 状态轮询：页面一打开就启动，让"谁在干活"这件事始终可见。
+  AgentPanel.start();
 
   LLM.load();
   try {
@@ -1155,6 +1436,13 @@ $('btnDraftExport').addEventListener('click', exportDraft);
 $('btnCheck').addEventListener('click', runCheck);
 $('btnVerifyRefs').addEventListener('click', runVerifyRefs);
 $('btnOpinion').addEventListener('click', runOpinion);
+
+// 本轮补齐的功能
+$('btnOutline') && $('btnOutline').addEventListener('click', runOutline);
+$('btnDraftDocx') && $('btnDraftDocx').addEventListener('click', exportDocx);
+$('btnRevise') && $('btnRevise').addEventListener('click', runRevise);
+$('btnDup') && $('btnDup').addEventListener('click', runDuplication);
+$('btnTemplate') && $('btnTemplate').addEventListener('click', runTemplateCompare);
 $('btnReviewExport').addEventListener('click', () => {
   if (Review.markdown) download(Review.markdown, '审稿意见书.md');
 });

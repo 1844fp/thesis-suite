@@ -134,11 +134,35 @@ class ReviewAgent(Agent):
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     async def template(self, ctx: Context, params: dict, creds) -> dict:
-        """学校模板比对。``params['template']`` / ``['manuscript']`` 是文件字节。"""
+        """学校模板比对。
+
+        参数契约（**显式两种**，避免"把文件名和内容拼成一个字符串"那种脆弱约定）：
+          * ``template`` / ``manuscript``：原始字节（程序化调用时用）
+          * ``template_b64`` / ``manuscript_b64``：base64 字符串（HTTP 调用时用，
+            因为二进制没法直接放进 JSON）
+        """
+        import base64
+
         from .. import capabilities as cap
 
-        tpl = params.get("template")
-        man = params.get("manuscript")
+        def _pick(plain_key: str, b64_key: str) -> bytes | None:
+            raw = params.get(plain_key)
+            if raw is not None:
+                return raw.encode("utf-8") if isinstance(raw, str) else bytes(raw)
+            b64 = params.get(b64_key)
+            if not b64:
+                return None
+            text = str(b64)
+            # 允许前端直接丢一个 data URL 过来（FileReader 的自然产物）
+            if text.startswith("data:") and "," in text:
+                text = text.split(",", 1)[1]
+            try:
+                return base64.b64decode(text)
+            except Exception:  # noqa: BLE001
+                return None
+
+        tpl = _pick("template", "template_b64")
+        man = _pick("manuscript", "manuscript_b64")
         if not tpl:
             return {"ok": False, "error": "请上传学校模板（.docx）。"}
         if not man:
@@ -150,12 +174,9 @@ class ReviewAgent(Agent):
 
             man = markdown_to_docx(draft_to_markdown(draft), title=str(draft.get("title") or ""))
 
-        def _as_bytes(v) -> bytes:
-            return v.encode("utf-8") if isinstance(v, str) else bytes(v)
-
         ev = ctx.begin(self.name, "template", "学校模板比对")
         try:
-            result = cap.compare_with_template(_as_bytes(man), _as_bytes(tpl))
+            result = cap.compare_with_template(man, tpl)
             if result.get("error"):
                 ctx.fail(ev, result["error"])
                 return {"ok": False, "error": result["error"]}
