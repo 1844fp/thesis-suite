@@ -39,13 +39,26 @@ def main() -> int:
         ('multiple', "支持一次多选"),
         ('accept=".pdf', "声明可接受的扩展名"),
         ('扫描版', "扫描版 PDF 的提示"),
+        # 连续工作流改造（布局参考 ThesisMind）
+        ('id="tabbar"', "阶段导航容器"),
+        ('id="themeToggle"', "暗色模式切换按钮"),
+        ('thesis-theme', "主题持久化的 localStorage 键"),
+        ('/static/theme.css', "引入设计令牌与布局样式"),
     ):
         hit = need in html
         print(f"  [{'OK ' if hit else 'FAIL'}] {why}：{need[:34]}")
         ok = ok and hit
 
-    print("\n=== app.js 关键逻辑 ===")
+    # 五个阶段按钮由 app.js 注入到 #tabbar，所以要检查的是 JS 里的阶段定义。
+    print("\n=== 连续工作流：五个阶段 ===")
     js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    for sid, name in (("topic", "定题目"), ("proposal", "开题报告"), ("draft", "写初稿"),
+                      ("revise", "修改与评估"), ("defense", "答辩材料")):
+        hit = f"id: '{sid}'" in js and name in js
+        print(f"  [{'OK ' if hit else 'FAIL'}] 阶段 {sid}（{name}）")
+        ok = ok and hit
+
+    print("\n=== app.js 关键逻辑 ===")
     for need, why in (
         ("use_web:", "把联网开关传给后端"),
         ("renderCoverage", "覆盖度渲染函数"),
@@ -57,10 +70,42 @@ def main() -> int:
         ("/api/gather/import", "调用导入接口"),
         ("new FormData()", "用 multipart 上传"),
         ("e.dataTransfer", "读取拖入的文件"),
+        # 工作流接线
+        ("function selectStage", "阶段切换"),
+        ("function buildStages", "阶段导航渲染"),
+        ("function injectNextButtons", "阶段间的下一步出口"),
+        ("function selectTab", "旧调用点兼容层"),
+        ("Progress.markDone", "阶段完成状态"),
+        ("Theme.bind", "主题初始化"),
     ):
         hit = need in js
         print(f"  [{'OK ' if hit else 'FAIL'}] {why}：{need}")
         ok = ok and hit
+
+    print("\n=== theme.css：设计令牌与布局 ===")
+    css_path = ROOT / "web" / "theme.css"
+    if not css_path.is_file():
+        print("  [FAIL] theme.css 不存在")
+        ok = False
+    else:
+        css = css_path.read_text(encoding="utf-8")
+        for need, why in (
+            ("--tm-background", "ThesisMind 背景令牌"),
+            ("--tm-primary", "ThesisMind 主色令牌"),
+            ("--tm-success", "成功色令牌"),
+            ("--tm-warning", "警告色令牌"),
+            ("--tm-link", "链接色令牌"),
+            (".dark", "暗色模式覆盖"),
+            ("--sidebar-w: 300px", "侧栏宽度（与参考站一致）"),
+            ("grid-template-columns", "两列布局"),
+            (".stage", "阶段项样式"),
+            (".stage-dot", "阶段状态点"),
+            (".stage-next", "下一步按钮容器"),
+            ("@media", "响应式"),
+        ):
+            hit = need in css
+            print(f"  [{'OK ' if hit else 'FAIL'}] {why}：{need}")
+            ok = ok and hit
 
     print("\n=== 写作接口：无 Key 时的行为与新字段 ===")
     from fastapi.testclient import TestClient

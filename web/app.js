@@ -190,26 +190,261 @@ async function sse(path, body, onEvent) {
   }
 }
 
-/* ================================================================== 页签 */
-const ASSISTANTS = [
-  { id: 'topics', num: '①', name: '题目生成' },
-  { id: 'gather', num: '②', name: '资料获取' },
-  { id: 'writing', num: '③', name: '写作' },
-  { id: 'review', num: '④', name: '评估' },
+/* ================================================================ 阶段工作流
+   界面参考 ThesisMind（thesismindai.com）的组织方式：论文写作不是"四个并列的工具"，
+   而是**一件事的五个阶段**，左边走阶段、右边做当前这一步，数据跨阶段留着。
+
+   这里刻意把两件事分开：
+     · **stage** 是给用户看的"阶段"（定题目 / 开题报告 / …），决定左侧导航；
+     · **panel** 是实际承载界面的容器（p-topics / p-gather / …），决定右侧显示哪一块。
+   一个阶段可以对应一个 panel，将来也可以几个阶段共用一个 panel，
+   所以不把两者混成一个概念。 */
+const STAGES = [
+  { id: 'topic',    n: '1', name: '定题目',   desc: '先有一个能写下去的题', panel: 'topics' },
+  { id: 'proposal', n: '2', name: '开题报告', desc: '把文献与依据找齐',     panel: 'gather' },
+  { id: 'draft',    n: '3', name: '写初稿',   desc: '逐章生成正文',         panel: 'writing' },
+  { id: 'revise',   n: '4', name: '修改与评估', desc: '查问题、出意见书',   panel: 'review' },
+  { id: 'defense',  n: '5', name: '答辩材料', desc: '答辩稿与演示提纲',     panel: 'review' },
 ];
 
-function buildTabs() {
-  $('tabbar').innerHTML = ASSISTANTS.map((a) =>
-    `<button class="tab" data-tab="${a.id}"><span class="num">${a.num}</span>${a.name}</button>`).join('');
-  document.querySelectorAll('.tab').forEach((btn) => {
-    btn.addEventListener('click', () => selectTab(btn.dataset.tab));
+let CURRENT_STAGE = 'topic';
+
+/** 阶段是否可用。答辩材料尚未实现——明确禁用，而不是让用户点进去看到空白。 */
+function stageEnabled(id) {
+  return id !== 'defense';
+}
+
+function buildStages() {
+  const bar = $('tabbar');
+  if (!bar) return;
+
+  // 阶段按钮可能**已经在 HTML 里静态写好**（布局与文案放在 HTML 更直观，也利于
+  // 首屏不闪），也可能需要这里渲染。两种都支持：有就不重复造，没有才补。
+  // 早先这里无条件 innerHTML 覆盖，会把 HTML 里写好的按钮连同结构一起冲掉。
+  let buttons = Array.from(bar.querySelectorAll('.stage'));
+
+  if (!buttons.length) {
+    bar.innerHTML = STAGES.map((s) => `
+      <button class="stage" data-stage="${s.id}"${stageEnabled(s.id) ? '' : ' disabled'}>
+        <span class="stage-num">${s.n}</span>
+        <span class="stage-text"><strong>${esc(s.name)}</strong><small>${esc(s.desc)}</small></span>
+        <span class="stage-dot" aria-hidden="true"></span>
+      </button>`).join('');
+    buttons = Array.from(bar.querySelectorAll('.stage'));
+  }
+
+  buttons.forEach((btn) => {
+    const stage = STAGES.find((s) => s.id === btn.dataset.stage);
+    if (!stage) return;
+    if (!stageEnabled(stage.id)) btn.disabled = true;
+    // 事件绑定前先移除同名监听是做不到的（匿名函数），所以用 dataset 打标防止重复绑定。
+    if (btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => {
+      if (btn.disabled) {
+        // 明确说清为什么点不动，而不是让按钮静默无反应。
+        const cur = STAGES.find((s) => s.id === CURRENT_STAGE);
+        const host = cur ? document.getElementById('p-' + cur.panel) : null;
+        const noteHost = (host && host.querySelector('.note')) || $('gatherNote') || $('topicNote');
+        if (noteHost) note(noteHost, 'warn', '「答辩材料」还没做，后面会加上。');
+        else alert('「答辩材料」还没做，后面会加上。');
+        return;
+      }
+      selectStage(btn.dataset.stage);
+    });
   });
 }
 
+/** 切换阶段。只切显隐，不刷新页面。 */
+function selectStage(id) {
+  const stage = STAGES.find((s) => s.id === id);
+  if (!stage) return;
+  CURRENT_STAGE = id;
+
+  document.querySelectorAll('.stage').forEach((b) =>
+    b.classList.toggle('active', b.dataset.stage === id));
+
+  // panel 用旧的 id 方案（p-topics 等），因为四个功能块的内部逻辑都挂在那儿。
+  document.querySelectorAll('.panel').forEach((p) =>
+    p.classList.toggle('active', p.id === 'p-' + stage.panel));
+
+  if (location.hash.replace('#', '') !== id) location.hash = id;
+
+  // 切到某阶段时把对应的工作区滚到顶部——长稿件滚到一半再切阶段会很迷惑。
+  const main = document.querySelector('main');
+  if (main) main.scrollTop = 0;
+}
+
+/* ---- 阶段状态：只在界面上标记，不做任何门禁 ----
+   为什么不禁止跳阶段：作者往往手里已经有初稿，直接进"修改与评估"是完全正常的用法。
+   把阶段做成硬性关卡只会挡住真实流程，所以状态只是提示，不拦人。 */
+const Progress = {
+  done: new Set(),
+
+  markDone(id) {
+    if (!id) return;
+    this.done.add(id);
+    this.paint();
+  },
+
+  paint() {
+    document.querySelectorAll('.stage').forEach((b) => {
+      b.classList.toggle('done', this.done.has(b.dataset.stage));
+    });
+    const bar = $('stageSummary');
+    if (!bar) return;
+    const order = STAGES.filter((s) => stageEnabled(s.id));
+    const n = order.filter((s) => this.done.has(s.id)).length;
+    bar.textContent = `已完成 ${n}/${order.length} 个阶段`;
+  },
+};
+
+/* ================================================================ 暗色模式
+   与 ThesisMind 一致：localStorage 键 thesis-theme，取值 light/dark/system；
+   system 时按当前小时判断（19:00–07:00 视为暗色）。防闪白的那段内联脚本在
+   index.html 的 <head> 里先跑一次，这里只负责切换与持久化。 */
+const Theme = {
+  KEY: 'thesis-theme',
+
+  get() {
+    return localStorage.getItem(this.KEY) || 'system';
+  },
+
+  set(v) {
+    localStorage.setItem(this.KEY, v);
+    this.apply();
+  },
+
+  /** system 是否应视为暗色。抽出来是为了让内联脚本与这里判断一致。 */
+  systemIsDark() {
+    const h = new Date().getHours();
+    return h >= 19 || h < 7;
+  },
+
+  resolved() {
+    const p = this.get();
+    if (p === 'dark') return 'dark';
+    if (p === 'light') return 'light';
+    return this.systemIsDark() ? 'dark' : 'light';
+  },
+
+  apply() {
+    const dark = this.resolved() === 'dark';
+    document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+    const btn = $('themeToggle');
+    if (btn) {
+      const p = this.get();
+      btn.textContent = p === 'system' ? '🌗' : (p === 'dark' ? '🌙' : '☀️');
+      btn.title = `主题：${{ system: '跟随系统', dark: '暗色', light: '亮色' }[p] }（点击切换）`;
+    }
+  },
+
+  /** 三态循环：跟随系统 → 暗色 → 亮色 → 跟随系统 */
+  cycle() {
+    const order = ['system', 'dark', 'light'];
+    const next = order[(order.indexOf(this.get()) + 1) % order.length];
+    this.set(next);
+  },
+
+  bind() {
+    const btn = $('themeToggle');
+    if (btn) btn.addEventListener('click', () => this.cycle());
+    // 跟随系统时，用户改系统主题要能实时反映（不刷新页面）。
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if (this.get() === 'system') this.apply();
+      });
+    }
+    this.apply();
+  },
+};
+
+/* 兼容层：旧代码里还留着 selectTab('writing') 这类调用（例如从题目卡片跳到写作）。
+   保留这个函数名并把旧页签 id 映射到阶段，避免到处改调用点——
+   映射表写明了"旧概念 → 新概念"，读代码时不会困惑。 */
+const LEGACY_TAB_TO_STAGE = {
+  topics: 'topic', gather: 'proposal', writing: 'draft', review: 'revise',
+};
+
 function selectTab(id) {
-  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
-  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'p-' + id));
-  location.hash = id;
+  selectStage(LEGACY_TAB_TO_STAGE[id] || id);
+}
+
+/* ---------------------------------------------------------------- 下一步按钮
+   连续工作流不能只是"把四个页签改叫阶段"——每个阶段做完必须有一眼可见的出口，
+   否则用户照样会停在原地不知道往哪走。这个函数在每个 panel 底部注入一个
+   "下一步：xxx"按钮。
+
+   用 JS 注入而不是写进 HTML：按钮属于**流程控制**，流程定义在 STAGES 里，
+   两边分开放会不同步（改了阶段顺序却忘了改按钮）。
+   注入发生在 boot 阶段，那时子代理对 index.html 的改动已经就位。 */
+const NEXT_OF_PANEL = {
+  topics: { to: 'proposal', label: '下一步：找文献与依据（开题报告）' },
+  gather: { to: 'draft', label: '下一步：逐章写初稿' },
+  writing: { to: 'revise', label: '下一步：跑检查、出意见书（修改与评估）' },
+  review: null,                       // 最后一站，没有下一步
+};
+
+/** 注入"下一步"区块的样式。
+ *
+ *  为什么不写进 theme.css：这段样式只为 injectNextButtons 造出来的 DOM 服务，
+ *  放在同一个文件里，改了按钮结构就不会忘记改样式。而且 theme.css 是设计系统的
+ *  地盘（令牌、布局、通用组件），流程控制样式混进去会让两边的职责变模糊。
+ *  只注入一次，重复调用是安全的。 */
+function injectNextButtonStyles() {
+  if (document.getElementById('stageNextStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'stageNextStyles';
+  style.textContent = `
+    .stage-next {
+      margin-top: 18px; padding-top: 16px;
+      border-top: 1px dashed var(--tm-border, var(--line));
+      display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
+    }
+    .stage-next-btn { font-size: 14px; }
+    .stage-next-hint { font-size: 13px; color: var(--tm-muted-foreground, var(--ink-3)); }
+    .stage-next .note { margin: 0; width: 100%; }
+  `;
+  document.head.appendChild(style);
+}
+
+function injectNextButtons() {
+  injectNextButtonStyles();
+
+  Object.entries(NEXT_OF_PANEL).forEach(([panel, next]) => {
+    const host = document.getElementById('p-' + panel);
+    if (!host) return;
+
+    // 已经注入过就不重复（boot 可能被再次调用，例如以后加热重载）
+    if (host.querySelector('.stage-next')) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'stage-next';
+    if (!next) {
+      wrap.innerHTML = '<span class="stage-next-hint">到这里整条链路就走完了。' +
+        '产物可以逐个导出，也可以回上面任意阶段继续改。</span>';
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'btn stage-next-btn';
+      btn.textContent = next.label;
+      btn.addEventListener('click', () => {
+        selectStage(next.to);
+        const msg = document.getElementById('stageNextNote');
+        if (msg) {
+          msg.className = 'note ok';
+          msg.textContent = `已进入「${STAGES.find((s) => s.id === next.to).name}」阶段。`;
+        }
+      });
+      wrap.appendChild(btn);
+      const hint = document.createElement('div');
+      hint.id = 'stageNextNote';
+      hint.className = 'note';
+      hint.style.display = 'none';
+      wrap.appendChild(hint);
+    }
+    host.appendChild(wrap);
+  });
 }
 
 /* ================================================================== ① 题目生成 */
@@ -281,8 +516,14 @@ async function runTopics() {
       } else if (ev.type === 'result') {
         Topic.lastResult = ev.result;
         renderTopics(ev.result);
+        Progress.markDone('topic');
         setProgress($('topicBar'), $('topicMsg'), $('topicProg'), 1, '完成');
         $('btnTopicExport').disabled = false;
+        // 阶段化之后要主动告诉用户"下一步做什么"，否则他会停在原地。
+        note($('topicNote'), 'ok',
+          '选题完成。<strong>下一步：去「开题报告」阶段把文献与依据找齐</strong>——' +
+          '写作只依据证据库与联网检索到的真实文献，依据越足，初稿越实。' +
+          '<br>点左侧的阶段导航即可继续；也可以点下面任意一个题目，把题目带到写作阶段。');
         setTimeout(() => hideProgress($('topicProg')), 1200);
       } else if (ev.type === 'error') {
         note($('topicNote'), 'err', esc(ev.message));
@@ -491,6 +732,7 @@ async function runExtract() {
     }
     note($('gatherNote'), kind, msg);
     renderGather(data.items);
+    Progress.markDone('proposal');
     setProgress($('gatherBar'), $('gatherMsg'), $('gatherProg'), 1, '完成');
     setTimeout(() => hideProgress($('gatherProg')), 1200);
   } catch (err) {
@@ -595,6 +837,7 @@ async function runDraft() {
       } else if (ev.type === 'result') {
         SID.set(ev.sid); Write.draft = ev.draft;
         renderDraft(ev.draft, ev.coverage, ev.notice);
+        Progress.markDone('draft');
         setProgress($('writeBar'), $('writeMsg'), $('writeProg'), 1, '完成');
         $('btnDraftExport').disabled = false;
         const cov = ev.coverage || {};
@@ -603,9 +846,12 @@ async function runDraft() {
           note($('writeNote'), 'warn',
             `生成完成，但有 <strong>${cov.citations_invalid || 0} 处编造的引用编号</strong>、` +
             `<strong>${cov.ungrounded_numbers || 0} 处找不到依据的数字</strong>，` +
-            '已在稿件上方逐章标出，请务必人工核对。');
+            '已在稿件上方逐章标出，请务必人工核对。' +
+            '<br><strong>下一步：去「修改与评估」阶段跑一遍检查。</strong>');
         } else {
-          note($('writeNote'), 'ok', '生成完成。');
+          note($('writeNote'), 'ok',
+            '初稿完成，引用与数字都能在依据池里找到。' +
+            '<br><strong>下一步：去「修改与评估」阶段跑 53 项检查，看还有什么问题。</strong>');
         }
         setTimeout(() => hideProgress($('writeProg')), 1200);
       } else if (ev.type === 'error') {
@@ -715,6 +961,7 @@ async function runCheck() {
     Review.checkData = data;
     Review.markdown = data.markdown || '';
     renderCheck(data);
+    Progress.markDone('revise');
     setProgress($('reviewBar'), $('reviewMsg'), $('reviewProg'), 1, '完成');
     setTimeout(() => hideProgress($('reviewProg')), 1200);
     $('btnOpinion').disabled = !LLM.ready;
@@ -839,11 +1086,24 @@ async function showCapabilities() {
 }
 
 async function boot() {
-  buildTabs();
+  // 主题要**先**应用：晚一步会看到亮色闪一下再变暗。
+  Theme.bind();
+
+  buildStages();
   const hash = location.hash.replace('#', '');
-  selectTab(ASSISTANTS.some((a) => a.id === hash) ? hash : 'topics');
+  const valid = STAGES.some((s) => s.id === hash && stageEnabled(s.id));
+  selectStage(valid ? hash : 'topic');
+
+  // 浏览器前进/后退要能切阶段，否则用户按返回键会跳出站点。
+  window.addEventListener('hashchange', () => {
+    const id = location.hash.replace('#', '');
+    if (id && id !== CURRENT_STAGE && STAGES.some((s) => s.id === id && stageEnabled(s.id))) {
+      selectStage(id);
+    }
+  });
 
   bindDropzone();
+  injectNextButtons();
 
   LLM.load();
   try {
@@ -896,15 +1156,27 @@ $('btnReviewExport').addEventListener('click', () => {
   if (Review.markdown) download(Review.markdown, '审稿意见书.md');
 });
 
-// 从「题目生成」一键带到「写作」：题目是链路的起点，手动复制很烦。
+// 点一个题目 → 题目存下来，然后进"开题报告"阶段。
+//
+// 早先这里直接跳到写作页签并提示"先去录入资料"，但那时界面是四个并列页签，
+// 用户看不出该往哪走。改成工作流之后，题目应当顺着阶段往下流动：
+// 定题目 → 开题报告（找依据）→ 写初稿。所以这里只做第一步，
+// 把题目带到下一步，并明确告诉他下一步要干什么。
 document.addEventListener('click', (e) => {
   const h = e.target.closest('.topic h3');
   if (!h) return;
   const title = h.textContent.replace(/^\s*\d+\s*/, '').trim();
   if (!title) return;
-  $('wTitle').value = title;
-  selectTab('writing');
-  note($('writeNote'), 'ok', '已把题目带到写作页签。请先在「资料获取」录入资料，写作只依据证据库。');
+
+  $('wTitle').value = title;              // 写作阶段的题目输入框
+  Write.chosenTitle = title;
+  Progress.markDone('topic');
+
+  selectStage('proposal');
+  note($('gatherNote'), 'ok',
+    `已选定题目：<strong>${esc(title)}</strong>` +
+    '<br>这一步把文献与依据找齐——可以直接<strong>拖入 PDF / Word 资料</strong>，' +
+    '或粘贴参考文献让助手联网核验。依据备齐后点左侧「写初稿」继续。');
 });
 
 boot();

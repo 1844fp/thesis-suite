@@ -3,437 +3,346 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>论文助手 · 题目生成 / 资料获取 / 写作 / 评估</title>
-<style>
-/* ---------------------------------------------------------------------------
-   视觉规范
-   学术工具的界面不该抢戏：中性底色、克制的强调色、只用一处主色（靛蓝）。
-   字号与行高按中文正文的可读性调过——正文 15px/1.75 是中文长文比较舒服的档位。
---------------------------------------------------------------------------- */
-:root {
-  --bg: #f6f7f9;
-  --panel: #ffffff;
-  --ink: #1b1f24;
-  --ink-2: #4a5560;
-  --ink-3: #7a8590;
-  --line: #e3e6ea;
-  --line-2: #cfd4da;
-  --brand: #2f5bd7;
-  --brand-soft: #eef3ff;
-  --ok: #1a7f52;
-  --warn: #a86a00;
-  --bad: #c0392b;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 4px 14px rgba(16, 24, 40, .05);
-}
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
-body {
-  background: var(--bg); color: var(--ink);
-  font: 15px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-a { color: var(--brand); }
-code, pre, .mono { font-family: ui-monospace, Consolas, "Cascadia Mono", "Courier New", monospace; }
+<title>论文助手 · 一条连续工作流：定题目 / 开题报告 / 写初稿 / 修改与评估 / 答辩材料</title>
+<script>
+/* 主题预置脚本：必须在样式表之前、同步执行。
+   为什么不能等 app.js：app.js 在 </body> 前加载，那时首屏已经按亮色画完了一帧，
+   暗色用户会看到一次明显的白闪。这段脚本必须在浏览器开始绘制前就把 .dark 挂上 <html>。
 
-/* ---- 顶栏 ---- */
-header {
-  background: var(--panel); border-bottom: 1px solid var(--line);
-  position: sticky; top: 0; z-index: 50;
-}
-.hwrap {
-  max-width: 1180px; margin: 0 auto; padding: 12px 20px;
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-}
-.brand { font-size: 17px; font-weight: 650; letter-spacing: .2px; white-space: nowrap; }
-.brand span { color: var(--ink-3); font-weight: 400; font-size: 13px; margin-left: 8px; }
-.spacer { flex: 1; }
-
-/* 密钥区：右上角常驻，因为它决定能用到哪些能力 */
-.keybox { display: flex; align-items: center; gap: 8px; }
-.keybox input {
-  width: 210px; padding: 7px 10px; border: 1px solid var(--line-2);
-  border-radius: 8px; font-size: 13px; background: #fff;
-}
-.keybadge {
-  font-size: 12px; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
-  border: 1px solid var(--line-2); color: var(--ink-3); background: #fff;
-}
-.keybadge.on { color: var(--ok); border-color: #bfe3d0; background: #f1faf5; }
-
-/* ---- 页签 ---- */
-nav.tabs {
-  background: var(--panel); border-bottom: 1px solid var(--line);
-  position: sticky; top: 57px; z-index: 40;
-}
-.tabwrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; display: flex; gap: 2px; overflow-x: auto; }
-.tab {
-  appearance: none; border: 0; background: none; cursor: pointer;
-  padding: 12px 16px; font-size: 14.5px; color: var(--ink-2);
-  border-bottom: 2px solid transparent; white-space: nowrap; font-family: inherit;
-}
-.tab:hover { color: var(--ink); }
-.tab.active { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
-.tab .num { color: var(--ink-3); font-size: 12px; margin-right: 6px; }
-.tab.active .num { color: var(--brand); }
-
-/* ---- 主体 ---- */
-main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 80px; }
-.panel { display: none; }
-.panel.active { display: block; }
-.card {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 18px 20px; margin-bottom: 16px;
-}
-.card > h2 { margin: 0 0 4px; font-size: 16px; font-weight: 650; }
-.card > h2 .step {
-  display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center;
-  border-radius: 50%; background: var(--brand-soft); color: var(--brand);
-  font-size: 12px; margin-right: 8px; font-weight: 700;
-}
-.hint { color: var(--ink-3); font-size: 13px; margin: 0 0 14px; }
-.hint strong { color: var(--ink-2); }
-
-/* ---- 表单 ---- */
-.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
-label.f { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }
-input[type=text], input[type=number], select, textarea {
-  width: 100%; padding: 8px 10px; border: 1px solid var(--line-2);
-  border-radius: 8px; font-size: 14px; background: #fff; color: var(--ink);
-  font-family: inherit;
-}
-textarea { resize: vertical; line-height: 1.7; }
-input:focus, select:focus, textarea:focus {
-  outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft);
-}
-.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
-button.btn {
-  appearance: none; border: 1px solid var(--brand); background: var(--brand); color: #fff;
-  padding: 9px 18px; border-radius: 8px; font-size: 14px; cursor: pointer;
-  font-family: inherit; font-weight: 500;
-}
-button.btn:hover { background: #2449b8; }
-button.btn:disabled { opacity: .5; cursor: not-allowed; }
-button.ghost {
-  appearance: none; border: 1px solid var(--line-2); background: #fff; color: var(--ink-2);
-  padding: 9px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; font-family: inherit;
-}
-button.ghost:hover { border-color: var(--ink-3); color: var(--ink); }
-button.ghost:disabled { opacity: .5; cursor: not-allowed; }
-
-/* ---- 进度 ---- */
-.progress { margin-top: 14px; display: none; }
-.progress.on { display: block; }
-.bar { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; }
-.bar > i { display: block; height: 100%; width: 0; background: var(--brand); transition: width .3s; }
-.pmsg { font-size: 13px; color: var(--ink-2); margin-top: 7px; min-height: 20px; }
-
-/* ---- 状态提示 ---- */
-.note {
-  padding: 10px 13px; border-radius: 8px; font-size: 13.5px; margin: 12px 0;
-  border: 1px solid var(--line); background: #fafbfc; color: var(--ink-2);
-}
-.note.err { border-color: #f0c8c2; background: #fdf3f2; color: #8f2c1f; }
-.note.ok { border-color: #bfe3d0; background: #f1faf5; color: #17603f; }
-.note.warn { border-color: #edd8ab; background: #fdf8ec; color: #7d5100; }
-.hidden { display: none !important; }
-
-/* ---- 结果 ---- */
-.stat { display: flex; gap: 22px; flex-wrap: wrap; margin: 4px 0 14px; }
-.stat div { font-size: 13px; color: var(--ink-3); }
-.stat b { display: block; font-size: 21px; color: var(--ink); font-weight: 650; line-height: 1.3; }
-.md {
-  background: #fbfbfc; border: 1px solid var(--line); border-radius: 8px;
-  padding: 16px 18px; max-height: 620px; overflow: auto; font-size: 14px; line-height: 1.8;
-  white-space: pre-wrap; word-break: break-word;
-}
-.md h1 { font-size: 18px; margin: 4px 0 10px; }
-.md h2 { font-size: 16px; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
-.md h3 { font-size: 14.5px; margin: 14px 0 6px; }
-.md table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
-.md th, .md td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
-.md th { background: #f2f4f7; font-weight: 600; }
-.md blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
-
-.topic { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; background: #fff; }
-.topic h3 { margin: 0 0 6px; font-size: 15px; font-weight: 650; }
-.topic h3 .idx {
-  display: inline-block; min-width: 22px; height: 22px; line-height: 22px; text-align: center;
-  background: var(--brand-soft); color: var(--brand); border-radius: 6px;
-  font-size: 12px; margin-right: 8px; font-weight: 700;
-}
-.topic .meta { font-size: 12.5px; color: var(--ink-3); margin-bottom: 8px; }
-.topic .meta em { font-style: normal; color: var(--ink-2); }
-.topic .brief { font-size: 13.5px; color: var(--ink-2); white-space: pre-wrap; }
-.tags { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
-.tag {
-  font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
-  background: #f2f4f7; color: var(--ink-2); border: 1px solid var(--line);
-}
-.tag.ok { background: #f1faf5; color: var(--ok); border-color: #bfe3d0; }
-.tag.bad { background: #fdf3f2; color: var(--bad); border-color: #f0c8c2; }
-.tag.warn { background: #fdf8ec; color: var(--warn); border-color: #edd8ab; }
-
-table.list { border-collapse: collapse; width: 100%; font-size: 13px; }
-table.list th, table.list td { border-bottom: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
-table.list th { color: var(--ink-3); font-weight: 600; background: #fafbfc; }
-table.list tr:hover td { background: #fcfcfd; }
-
-footer { max-width: 1180px; margin: 0 auto; padding: 0 20px 40px; color: var(--ink-3); font-size: 12.5px; }
-footer a { color: var(--ink-3); }
-details.adv { margin-top: 10px; }
-details.adv summary { cursor: pointer; font-size: 13px; color: var(--ink-3); }
-details.adv summary:hover { color: var(--ink-2); }
-details.adv > div { margin-top: 10px; }
-
-/* ---- 文件拖放区 ---- */
-.dropzone {
-  position: relative; border: 2px dashed var(--line-2); border-radius: 10px;
-  padding: 26px 20px; text-align: center; background: #fbfbfc;
-  transition: border-color .15s, background .15s; cursor: pointer;
-}
-.dropzone:hover { border-color: var(--brand); background: var(--brand-soft); }
-.dropzone.dragover { border-color: var(--brand); background: var(--brand-soft); }
-.dropzone.busy { opacity: .6; cursor: progress; }
-.dropzone input[type=file] {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  opacity: 0; cursor: pointer;
-}
-.dz-icon { font-size: 26px; line-height: 1.2; }
-.dz-main { font-size: 14px; color: var(--ink-2); margin-top: 4px; }
-.dz-sub { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
-
-/* 导入结果表格里的状态徽标 */
-.fkind {
-  display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px;
-  background: #f2f4f7; border: 1px solid var(--line); color: var(--ink-2);
-}
-.fkind.bad { background: #fdf3f2; color: var(--bad); border-color: #f0c8c2; }
-.fkind.warn { background: #fdf8ec; color: var(--warn); border-color: #edd8ab; }
-</style>
+   取值约定（localStorage 键 thesis-theme）：
+     'light' / 'dark'  —— 用户手动选定，永不自动改变；
+     'system'（也包含"没存过"）—— 按当前小时判断，19:00–07:00 视为暗色。
+   为什么"跟随系统"用小时数而不是 prefers-color-scheme：
+   这是参考站点的行为——晚上打开写作工具时默认就是暗色，与操作系统设置无关。 */
+(function () {
+  var KEY = 'thesis-theme';
+  var saved;
+  try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
+  if (saved !== 'light' && saved !== 'dark' && saved !== 'system') saved = 'system';
+  var h = new Date().getHours();
+  var dark = saved === 'dark' || (saved === 'system' && (h >= 19 || h < 7));
+  var root = document.documentElement;
+  root.classList.toggle('dark', dark);
+  root.style.colorScheme = dark ? 'dark' : 'light';
+  /* 把用户选的取值也写进 dataset：切换按钮要显示"现在是暗色"，
+     而不是"你上次选了跟随系统"——后者在白天是误导。 */
+  root.dataset.theme = saved;
+})();
+</script>
+<link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
 
-<header>
+<header class="topbar glass-panel">
   <div class="hwrap">
-    <div class="brand">论文助手<span>四合一 · 题目生成 / 资料获取 / 写作 / 评估</span></div>
+    <div class="brand">论文助手<span>一条连续工作流 · 定题目 / 开题报告 / 写初稿 / 修改与评估 / 答辩材料</span></div>
+
+    <!-- 阶段进度：对应下面五个阶段，由界面脚本按当前阶段点亮。 -->
+    <div class="flow" id="flow" aria-label="阶段进度">
+      <span>阶段 <b id="flowNow">1</b> / 5</span>
+      <span class="bar-dots" id="flowDots">
+        <i data-flow="topic"></i><i data-flow="proposal"></i><i data-flow="draft"></i>
+        <i data-flow="revise"></i><i data-flow="defense"></i>
+      </span>
+      <span id="flowName">定题目</span>
+    </div>
+
     <div class="spacer"></div>
+
     <div class="keybox">
       <span class="keybadge" id="keyBadge">未填密钥</span>
       <input type="password" id="apiKey" placeholder="你的 API Key（存在本机浏览器）" autocomplete="off">
       <select id="provider" title="服务商"></select>
     </div>
+
+    <!-- 暗色切换：三态（跟随系统 / 暗色 / 亮色）循环，纯前端、不刷新页面。
+         按钮里只放一个占位图标——app.js 的 Theme.apply() 会用 textContent
+         整块改写它（改成 🌗/🌙/☀️ 并把当前取值写进 title），
+         所以在 HTML 里再写一份"跟随系统"文字只会立刻被抹掉，不如不写。 -->
+    <button class="ghost themebtn" id="themeToggle" type="button" title="切换主题">🌗</button>
   </div>
 </header>
 
-<nav class="tabs"><div class="tabwrap" id="tabbar"></div></nav>
+<div class="shell">
 
-<main>
-  <!-- ============ ① 题目生成 ============ -->
-  <section class="panel" id="p-topics">
-    <div class="card">
-      <h2><span class="step">1</span>先定学科与要求</h2>
-      <p class="hint">
-        不填 API Key 也能用：会自动切换到<strong>内置离线学科知识库</strong>组合出题。
-        填了 Key 则由模型按你的方向生成，并附研究缺口与文献脉络简报。
-      </p>
-      <div class="grid">
-        <div>
-          <label class="f" for="tDiscipline">学科 / 专业 <span style="color:var(--bad)">*</span></label>
-          <input type="text" id="tDiscipline" list="disciplineList" placeholder="例如：教育学 / 临床医学 / 计算机科学与技术">
-          <datalist id="disciplineList"></datalist>
-        </div>
-        <div>
-          <label class="f" for="tDirection">具体方向或关注点</label>
-          <input type="text" id="tDirection" placeholder="例如：乡村教师职业发展">
-        </div>
-        <div>
-          <label class="f" for="tLevel">论文层次</label>
-          <select id="tLevel"></select>
-        </div>
-        <div>
-          <label class="f" for="tCount">题目数量</label>
-          <input type="number" id="tCount" value="6" min="1" max="12">
-        </div>
-        <div>
-          <label class="f" for="tMethod">必须用到的方法 / 技术</label>
-          <input type="text" id="tMethod" placeholder="例如：倾向性评分匹配 / 深度学习">
-        </div>
-        <div>
-          <label class="f" for="tKeywords">必须包含的关键词</label>
-          <input type="text" id="tKeywords" placeholder="逗号分隔">
-        </div>
+  <!-- ===================================================================
+       左侧阶段导航（300px）
+       这五个阶段就是原来的四个页签，加上一个占位的答辩材料：
+       用户的心智模型是"从定题目走到答辩"，不是"在四个工具之间横跳"。
+
+       这里的五个按钮和 app.js 的 buildStages() 渲染出来的是同一套契约
+       （.stage + data-stage + 三个子元素），属于**有意的重复**：
+       · 页面加载到 boot() 跑完之间，侧栏已经是有内容、可点的，不会先空一段；
+       · app.js 一旦把 #tabbar 的内容换掉，结构与这里逐字一致，视觉上无跳变。
+       两处要一起改的代价是存在的，但契约就这么大（五个 id），且静态这份是权威定义。
+
+       #tabbar 容器必须保留：app.js 的 buildStages() 会把阶段按钮渲染进它里面。 -->
+  <aside class="sidebar glass-panel">
+    <nav id="tabbar" aria-label="阶段导航">
+
+      <button class="stage active" data-stage="topic" type="button">
+        <span class="stage-num">1</span>
+        <span class="stage-text"><strong>定题目</strong><small>选一个能写下去的题</small></span>
+        <span class="stage-dot"></span>
+      </button>
+
+      <button class="stage" data-stage="proposal" type="button">
+        <span class="stage-num">2</span>
+        <span class="stage-text"><strong>开题报告</strong><small>攒够能引用的文献与证据</small></span>
+        <span class="stage-dot"></span>
+      </button>
+
+      <button class="stage" data-stage="draft" type="button">
+        <span class="stage-num">3</span>
+        <span class="stage-text"><strong>写初稿</strong><small>按证据逐章落笔</small></span>
+        <span class="stage-dot"></span>
+      </button>
+
+      <button class="stage" data-stage="revise" type="button">
+        <span class="stage-num">4</span>
+        <span class="stage-text"><strong>修改与评估</strong><small>查引用、改问题、出意见书</small></span>
+        <span class="stage-dot"></span>
+      </button>
+
+      <button class="stage" data-stage="defense" type="button">
+        <span class="stage-num">5</span>
+        <span class="stage-text"><strong>答辩材料</strong><small>即将上线</small></span>
+        <span class="stage-dot"></span>
+      </button>
+
+    </nav>
+
+    <!-- 侧栏底部：流程完成度。
+         #stageSummary 是 app.js 的 Progress.paint() 直接写入的位置，
+         文案由它给出（"已完成 n/5 个阶段"）；HTML 里**不预置数字**，
+         否则刷新瞬间会显示一个假进度，而且要跟着阶段状态手动维护，迟早不同步。
+         当前阶段名由本页脚本同步，纯显示用途。 -->
+    <div class="sidebar-foot">
+      <div class="stage-current">当前阶段：<b id="stageNow">定题目</b></div>
+      <div id="stageSummary" class="stage-summary"></div>
+      <div>
+        <a href="/api/docs" target="_blank" rel="noopener">API 文档</a> ·
+        <a href="/api/health" target="_blank" rel="noopener">服务自检</a> ·
+        <a href="#" id="btnDocs">能力说明</a>
       </div>
-      <details class="adv">
-        <summary>补充要求（写作要求、限制条件…）</summary>
-        <div><textarea id="tExtra" rows="3" placeholder="例如：偏向实证研究，数据须来自公开数据库，避免纯理论思辨"></textarea></div>
-      </details>
-      <div class="row">
-        <button class="btn" id="btnTopic">开始生成</button>
-        <button class="ghost" id="btnTopicExport" disabled>导出 Markdown</button>
-        <button class="ghost" id="btnTopicClear">清空</button>
-      </div>
-      <div class="progress" id="topicProg">
-        <div class="bar"><i id="topicBar"></i></div>
-        <div class="pmsg" id="topicMsg"></div>
-      </div>
-      <div id="topicNote"></div>
     </div>
-    <div class="card hidden" id="topicResultCard">
-      <h2>生成结果</h2>
-      <div class="stat" id="topicStat"></div>
-      <div id="topicList"></div>
-    </div>
-  </section>
+  </aside>
 
-  <!-- ============ ② 资料获取 ============ -->
-  <section class="panel" id="p-gather">
-    <div class="card">
-      <h2><span class="step">1</span>导入或粘贴你的资料</h2>
-      <p class="hint">
-        <strong>导入文件不需要 API Key</strong>——解析在本地完成。支持
-        <strong>PDF / Word(.docx) / Markdown / 纯文本 / HTML / CSV</strong>。
-        PDF 会<strong>按页拆分</strong>，抽取出的证据会带上页码，方便回查原文。
-        解析完的文件会出现在下面的文本区里，你可以再补充或修改，然后点「抽取证据」。
-      </p>
+  <!-- ===================================================================
+       右侧工作台：只显示当前阶段的内容。
+       四个 panel 容器的 id 一个字都没改——app.js 用 p-<tab> 找它们。
+  =================================================================== -->
+  <main class="workspace">
 
-      <div class="dropzone" id="gDrop">
-        <input type="file" id="gFiles" multiple
-               accept=".pdf,.docx,.md,.markdown,.txt,.text,.html,.htm,.csv,.tsv,.json,.bib">
-        <div class="dz-icon">📄</div>
-        <div class="dz-main">把文件拖到这里，或<strong>点击选择</strong></div>
-        <div class="dz-sub">
-          单个文件上限 25 MB，一次最多 10 个。扫描版（图片型）PDF 取不出文字，会明确提示需要 OCR。
+    <!-- ============ 阶段 1 · 定题目（题目生成） ============ -->
+    <section class="panel active" id="p-topics">
+      <div class="card">
+        <h2><span class="step">1</span>定题目：先圈定学科与要求</h2>
+        <p class="hint">
+          这是整条流程的起点——题目一旦定下来，后面开题、初稿、修改都会围绕它展开。
+          不填 API Key 也能用：会自动切换到<strong>内置离线学科知识库</strong>组合出题。
+          填了 Key 则由模型按你的方向生成，并附研究缺口与文献脉络简报。
+        </p>
+        <div class="grid">
+          <div>
+            <label class="f" for="tDiscipline">学科 / 专业 <span style="color:var(--bad)">*</span></label>
+            <input type="text" id="tDiscipline" list="disciplineList" placeholder="例如：教育学 / 临床医学 / 计算机科学与技术">
+            <datalist id="disciplineList"></datalist>
+          </div>
+          <div>
+            <label class="f" for="tDirection">具体方向或关注点</label>
+            <input type="text" id="tDirection" placeholder="例如：乡村教师职业发展">
+          </div>
+          <div>
+            <label class="f" for="tLevel">论文层次</label>
+            <select id="tLevel"></select>
+          </div>
+          <div>
+            <label class="f" for="tCount">题目数量</label>
+            <input type="number" id="tCount" value="6" min="1" max="12">
+          </div>
+          <div>
+            <label class="f" for="tMethod">必须用到的方法 / 技术</label>
+            <input type="text" id="tMethod" placeholder="例如：倾向性评分匹配 / 深度学习">
+          </div>
+          <div>
+            <label class="f" for="tKeywords">必须包含的关键词</label>
+            <input type="text" id="tKeywords" placeholder="逗号分隔">
+          </div>
         </div>
-      </div>
-      <div id="gFileList"></div>
-
-      <details class="adv" style="margin-top:14px">
-        <summary>或者：直接粘贴文本（每块资料之间用一行 <code>---</code> 分隔）</summary>
-        <div style="margin-top:10px">
-          <label class="f" for="gSources">资料原文</label>
-          <textarea id="gSources" rows="12" placeholder="第一份资料的题名或内容…&#10;&#10;---&#10;&#10;第二份资料…&#10;&#10;---&#10;&#10;参考文献（可整段粘贴，用于真伪核验）：&#10;[1] 张三. 某某研究[J]. 某某学报, 2020, 12(3): 45-56. DOI: 10.xxxx/xxxxx"></textarea>
+        <details class="adv">
+          <summary>补充要求（写作要求、限制条件…）</summary>
+          <div><textarea id="tExtra" rows="3" placeholder="例如：偏向实证研究，数据须来自公开数据库，避免纯理论思辨"></textarea></div>
+        </details>
+        <div class="row">
+          <button class="btn" id="btnTopic">开始生成</button>
+          <button class="ghost" id="btnTopicExport" disabled>导出 Markdown</button>
+          <button class="ghost" id="btnTopicClear">清空</button>
         </div>
-      </details>
-
-      <div class="row">
-        <button class="btn" id="btnExtract">抽取证据</button>
-        <button class="ghost" id="btnVerify" disabled>核验文献真伪</button>
-        <button class="ghost" id="btnGatherClear" disabled>清空证据库</button>
-      </div>
-      <div class="progress" id="gatherProg">
-        <div class="bar"><i id="gatherBar"></i></div>
-        <div class="pmsg" id="gatherMsg"></div>
-      </div>
-      <div id="gatherNote"></div>
-    </div>
-    <div class="card hidden" id="gatherResultCard">
-      <h2>证据库</h2>
-      <div class="stat" id="gatherStat"></div>
-      <div class="row" style="margin-top:0">
-        <button class="ghost" id="btnExportGbt">导出参考文献表（GB/T 7714）</button>
-        <button class="ghost" id="btnExportBib">导出 BibTeX</button>
-        <button class="ghost" id="btnExportMd">导出 Markdown 清单</button>
-      </div>
-      <div id="gatherList" style="margin-top:14px"></div>
-    </div>
-  </section>
-
-  <!-- ============ ③ 写作 ============ -->
-  <section class="panel" id="p-writing">
-    <div class="card">
-      <h2><span class="step">1</span>定题目与结构</h2>
-      <p class="hint">
-        写作依据分三层：<strong>A 你的资料</strong>（在「资料获取」录入）、
-        <strong>B 联网检索</strong>（从公开文献库找到的真实文献，带 DOI）、
-        <strong>C 模型自身知识</strong>。
-        A、B 两层可以挂引用编号；<strong>C 层内容不允许挂任何编号</strong>——
-        程序会逐个核对：编号越界、数字找不到依据，都会在生成结果里点名通报。
-      </p>
-      <div class="grid">
-        <div>
-          <label class="f" for="wTitle">论文题目 <span style="color:var(--bad)">*</span></label>
-          <input type="text" id="wTitle" placeholder="例如：乡村教师职业倦怠的影响因素研究">
+        <div class="progress" id="topicProg">
+          <div class="bar"><i id="topicBar"></i></div>
+          <div class="pmsg" id="topicMsg"></div>
         </div>
-        <div>
-          <label class="f" for="wGenre">论文类型</label>
-          <select id="wGenre"></select>
+        <div id="topicNote"></div>
+      </div>
+      <div class="card hidden" id="topicResultCard">
+        <h2>生成结果</h2>
+        <div class="stat" id="topicStat"></div>
+        <div id="topicList"></div>
+      </div>
+    </section>
+
+    <!-- ============ 阶段 2 · 开题报告（资料获取） ============ -->
+    <section class="panel" id="p-gather">
+      <div class="card">
+        <h2><span class="step">1</span>开题报告：把文献与证据攒起来</h2>
+        <p class="hint">
+          题目的可行性要靠文献说话。这一步的资料不会在换阶段后丢掉——
+          到了写初稿时，写作只认这里入池的证据。
+          <strong>导入文件不需要 API Key</strong>——解析在本地完成。支持
+          <strong>PDF / Word(.docx) / Markdown / 纯文本 / HTML / CSV</strong>。
+          PDF 会<strong>按页拆分</strong>，抽取出的证据会带上页码，方便回查原文。
+          解析完的文件会出现在下面的文本区里，你可以再补充或修改，然后点「抽取证据」。
+        </p>
+
+        <div class="dropzone" id="gDrop">
+          <input type="file" id="gFiles" multiple
+                 accept=".pdf,.docx,.md,.markdown,.txt,.text,.html,.htm,.csv,.tsv,.json,.bib">
+          <div class="dz-icon">📄</div>
+          <div class="dz-main">把文件拖到这里，或<strong>点击选择</strong></div>
+          <div class="dz-sub">
+            单个文件上限 25 MB，一次最多 10 个。扫描版（图片型）PDF 取不出文字，会明确提示需要 OCR。
+          </div>
         </div>
+        <div id="gFileList"></div>
+
+        <details class="adv" style="margin-top:14px">
+          <summary>或者：直接粘贴文本（每块资料之间用一行 <code>---</code> 分隔）</summary>
+          <div style="margin-top:10px">
+            <label class="f" for="gSources">资料原文</label>
+            <textarea id="gSources" rows="12" placeholder="第一份资料的题名或内容…&#10;&#10;---&#10;&#10;第二份资料…&#10;&#10;---&#10;&#10;参考文献（可整段粘贴，用于真伪核验）：&#10;[1] 张三. 某某研究[J]. 某某学报, 2020, 12(3): 45-56. DOI: 10.xxxx/xxxxx"></textarea>
+          </div>
+        </details>
+
+        <div class="row">
+          <button class="btn" id="btnExtract">抽取证据</button>
+          <button class="ghost" id="btnVerify" disabled>核验文献真伪</button>
+          <button class="ghost" id="btnGatherClear" disabled>清空证据库</button>
+        </div>
+        <div class="progress" id="gatherProg">
+          <div class="bar"><i id="gatherBar"></i></div>
+          <div class="pmsg" id="gatherMsg"></div>
+        </div>
+        <div id="gatherNote"></div>
       </div>
-      <div style="margin-top:12px">
-        <label class="f" for="wSections">章节结构（每行一个，可留空用默认结构）</label>
-        <textarea id="wSections" rows="5" placeholder="第1章 绪论&#10;第2章 文献综述&#10;第3章 研究设计&#10;第4章 结果与分析&#10;第5章 结论与展望"></textarea>
+      <div class="card hidden" id="gatherResultCard">
+        <h2>证据库</h2>
+        <div class="stat" id="gatherStat"></div>
+        <div class="row" style="margin-top:0">
+          <button class="ghost" id="btnExportGbt">导出参考文献表（GB/T 7714）</button>
+          <button class="ghost" id="btnExportBib">导出 BibTeX</button>
+          <button class="ghost" id="btnExportMd">导出 Markdown 清单</button>
+        </div>
+        <div id="gatherList" style="margin-top:14px"></div>
       </div>
-      <div style="margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#fafbfc">
-        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13.5px">
-          <input type="checkbox" id="wUseWeb" checked style="margin-top:4px;width:auto">
-          <span>
-            <strong>联网检索真实文献作为依据</strong>（推荐）
-            <span style="display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px">
-              从 Crossref / OpenAlex / arXiv 检索真实文献（带 DOI 可回查），并入依据池供引用。
-              不需要额外 Key。关掉后只能依据「资料获取」里录入的资料 + 模型自身知识。
+    </section>
+
+    <!-- ============ 阶段 3 · 写初稿（写作） ============ -->
+    <section class="panel" id="p-writing">
+      <div class="card">
+        <h2><span class="step">1</span>写初稿：定题目与结构</h2>
+        <p class="hint">
+          写作依据分三层：<strong>A 你的资料</strong>（在「开题报告」阶段录入）、
+          <strong>B 联网检索</strong>（从公开文献库找到的真实文献，带 DOI）、
+          <strong>C 模型自身知识</strong>。
+          A、B 两层可以挂引用编号；<strong>C 层内容不允许挂任何编号</strong>——
+          程序会逐个核对：编号越界、数字找不到依据，都会在生成结果里点名通报。
+        </p>
+        <div class="grid">
+          <div>
+            <label class="f" for="wTitle">论文题目 <span style="color:var(--bad)">*</span></label>
+            <input type="text" id="wTitle" placeholder="例如：乡村教师职业倦怠的影响因素研究">
+          </div>
+          <div>
+            <label class="f" for="wGenre">论文类型</label>
+            <select id="wGenre"></select>
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <label class="f" for="wSections">章节结构（每行一个，可留空用默认结构）</label>
+          <textarea id="wSections" rows="5" placeholder="第1章 绪论&#10;第2章 文献综述&#10;第3章 研究设计&#10;第4章 结果与分析&#10;第5章 结论与展望"></textarea>
+        </div>
+        <div style="margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--tm-muted)">
+          <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13.5px">
+            <input type="checkbox" id="wUseWeb" checked style="margin-top:4px;width:auto">
+            <span>
+              <strong>联网检索真实文献作为依据</strong>（推荐）
+              <span style="display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px">
+                从 Crossref / OpenAlex / arXiv 检索真实文献（带 DOI 可回查），并入依据池供引用。
+                不需要额外 Key。关掉后只能依据「开题报告」阶段录入的资料 + 模型自身知识。
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        </div>
+        <div class="row">
+          <button class="btn" id="btnDraft">逐章生成</button>
+          <button class="ghost" id="btnDraftExport" disabled>导出 Markdown</button>
+        </div>
+        <div class="progress" id="writeProg">
+          <div class="bar"><i id="writeBar"></i></div>
+          <div class="pmsg" id="writeMsg"></div>
+        </div>
+        <div id="writeNote"></div>
       </div>
-      <div class="row">
-        <button class="btn" id="btnDraft">逐章生成</button>
-        <button class="ghost" id="btnDraftExport" disabled>导出 Markdown</button>
+      <div class="card hidden" id="writeResultCard">
+        <h2>稿件</h2>
+        <div class="stat" id="writeStat"></div>
+        <div id="writeCoverage"></div>
+        <div class="md" id="writeBody"></div>
       </div>
-      <div class="progress" id="writeProg">
-        <div class="bar"><i id="writeBar"></i></div>
-        <div class="pmsg" id="writeMsg"></div>
-      </div>
-      <div id="writeNote"></div>
-    </div>
-    <div class="card hidden" id="writeResultCard">
-      <h2>稿件</h2>
-      <div class="stat" id="writeStat"></div>
-      <div id="writeCoverage"></div>
-      <div class="md" id="writeBody"></div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ============ ④ 评估 ============ -->
-  <section class="panel" id="p-review">
-    <div class="card">
-      <h2><span class="step">1</span>提交稿件</h2>
-      <p class="hint">
-        本地检查器<strong>不需要 API Key</strong>：53 项机器检查（引用编号、数字是否有依据、
-        写作质量、格式规范…）直接跑。评分由问题数量与严重度<strong>机械推导</strong>，
-        不是模型打的印象分。
-      </p>
-      <label class="f" for="rText">稿件正文（留空则用「写作」页签里的最新草稿）</label>
-      <textarea id="rText" rows="12" placeholder="粘贴稿件正文，需包含参考文献表才能核验文献真伪"></textarea>
-      <div class="row">
-        <button class="btn" id="btnCheck">跑本地检查</button>
-        <button class="ghost" id="btnVerifyRefs">核验参考文献真伪</button>
-        <button class="ghost" id="btnOpinion" disabled>生成审稿意见（需 Key）</button>
-        <button class="ghost" id="btnReviewExport" disabled>导出意见书</button>
+    <!-- ============ 阶段 4 · 修改与评估（评估） ============ -->
+    <section class="panel" id="p-review">
+      <div class="card">
+        <h2><span class="step">1</span>修改与评估：提交稿件</h2>
+        <p class="hint">
+          本地检查器<strong>不需要 API Key</strong>：53 项机器检查（引用编号、数字是否有依据、
+          写作质量、格式规范…）直接跑。评分由问题数量与严重度<strong>机械推导</strong>，
+          不是模型打的印象分。
+        </p>
+        <label class="f" for="rText">稿件正文（留空则用「写初稿」阶段里的最新草稿）</label>
+        <textarea id="rText" rows="12" placeholder="粘贴稿件正文，需包含参考文献表才能核验文献真伪"></textarea>
+        <div class="row">
+          <button class="btn" id="btnCheck">跑本地检查</button>
+          <button class="ghost" id="btnVerifyRefs">核验参考文献真伪</button>
+          <button class="ghost" id="btnOpinion" disabled>生成审稿意见（需 Key）</button>
+          <button class="ghost" id="btnReviewExport" disabled>导出意见书</button>
+        </div>
+        <div class="progress" id="reviewProg">
+          <div class="bar"><i id="reviewBar"></i></div>
+          <div class="pmsg" id="reviewMsg"></div>
+        </div>
+        <div id="reviewNote"></div>
       </div>
-      <div class="progress" id="reviewProg">
-        <div class="bar"><i id="reviewBar"></i></div>
-        <div class="pmsg" id="reviewMsg"></div>
+      <div class="card hidden" id="reviewResultCard">
+        <h2>检查结果</h2>
+        <div class="stat" id="reviewStat"></div>
+        <div id="reviewDims"></div>
+        <details class="adv" id="reviewRawWrap">
+          <summary>查看完整意见书原文（Markdown）</summary>
+          <div class="md" id="reviewRaw"></div>
+        </details>
       </div>
-      <div id="reviewNote"></div>
-    </div>
-    <div class="card hidden" id="reviewResultCard">
-      <h2>检查结果</h2>
-      <div class="stat" id="reviewStat"></div>
-      <div id="reviewDims"></div>
-      <details class="adv" id="reviewRawWrap">
-        <summary>查看完整意见书原文（Markdown）</summary>
-        <div class="md" id="reviewRaw"></div>
-      </details>
-    </div>
-    <div class="card hidden" id="verifyResultCard">
-      <h2>参考文献核验</h2>
-      <div class="stat" id="verifyStat"></div>
-      <div id="verifyList"></div>
-    </div>
-  </section>
-</main>
+      <div class="card hidden" id="verifyResultCard">
+        <h2>参考文献核验</h2>
+        <div class="stat" id="verifyStat"></div>
+        <div id="verifyList"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
 
 <footer>
   <p>
@@ -441,9 +350,63 @@ details.adv > div { margin-top: 10px; }
     本站<strong>不保存任何 API Key</strong>——密钥只存在你的浏览器里，随请求转交给模型服务商。
     会话数据只存在服务器内存中，重启即清空。
   </p>
-  <p><a href="/api/docs" target="_blank" rel="noopener">API 文档</a> · <a href="/api/health" target="_blank" rel="noopener">服务自检</a> · <a href="#" id="btnDocs">查看四个助手的能力说明</a></p>
+  <p>
+    <a href="/api/docs" target="_blank" rel="noopener">API 文档</a> ·
+    <a href="/api/health" target="_blank" rel="noopener">服务自检</a> ·
+    <a href="/api/capabilities" target="_blank" rel="noopener">四个助手的能力说明（JSON）</a>
+  </p>
 </footer>
 
 <script src="/static/app.js"></script>
+<script>
+/* ------------------------------------------------------- 顶部进度指示同步
+   顶栏那条"阶段 3 / 5"只是**显示**：阶段路由（hash、.stage.active、panel 显隐、
+   已完成标记）全部由 app.js 负责持有，这里只读它的结果，绝不自己写一遍，
+   否则两边各存一份"当前阶段"，迟早在某个入口上分叉。
+
+   为什么放在 index.html 而不是 app.js：这是纯展示件，
+   用事件委托在 .stage 的点击上顺带更新即可，不需要改动对方的阶段定义。 */
+(function () {
+  'use strict';
+
+  var STAGES = ['topic', 'proposal', 'draft', 'revise', 'defense'];
+  var NAME = { topic: '定题目', proposal: '开题报告', draft: '写初稿', revise: '修改与评估', defense: '答辩材料' };
+
+  function paint(id) {
+    var i = STAGES.indexOf(id);
+    if (i < 0) return;
+    var now = document.getElementById('stageNow');
+    if (now) now.textContent = NAME[id];
+    var flowName = document.getElementById('flowName');
+    if (flowName) flowName.textContent = NAME[id];
+    var flowNow = document.getElementById('flowNow');
+    if (flowNow) flowNow.textContent = String(i + 1);
+    // 已走过的阶段用 done（不是 on）：进度条上"走过"和"当前"是两件事，
+    // 都涂成同一个颜色就看不出还剩多少了。
+    document.querySelectorAll('#flowDots i').forEach(function (dot, n) {
+      dot.classList.toggle('on', dot.dataset.flow === id);
+      dot.classList.toggle('done', n < i);
+    });
+  }
+
+  // 委托到 document：.stage 按钮是 app.js 在 boot 时重新渲染进去的，
+  // 这里拿不到它们的引用，只能在事件冒泡阶段认领。
+  // app.js 的监听器注册在按钮自身上，先于这里执行，所以读到 hash 时它已经改好了——
+  // 不去猜"点到了哪个阶段"，直接以 hash 为准，只有一个事实来源。
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest) return;
+    if (e.target.closest('.stage[data-stage]') || e.target.closest('.stage-next-btn')) {
+      paint(location.hash.replace('#', '') || 'topic');
+    }
+  });
+
+  // 浏览器前进/后退同样会换阶段，补一次
+  window.addEventListener('hashchange', function () { paint(location.hash.replace('#', '')); });
+
+  // 首屏：app.js 的 boot() 也会走一遍 selectStage，用 setTimeout(0) 让出一个回合，
+  // 保证读到的是它算好的结果，而不是这行代码写死的默认值。
+  setTimeout(function () { paint(location.hash.replace('#', '') || 'topic'); }, 0);
+})();
+</script>
 </body>
 </html>

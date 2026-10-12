@@ -1,0 +1,513 @@
+/* ===========================================================================
+   论文助手 · 设计令牌与布局
+   ---------------------------------------------------------------------------
+   为什么把原来 index.html 里的内联样式搬到这里：
+   1. 暗色模式需要对**同一套结构**给出第二套取值。如果颜色还散落在页面里，
+      「亮色一处、暗色另一处」就没法保证同步改动，漏掉一处就是一块白斑。
+      集中成变量后，暗色只需要重定义变量，结构规则一行都不用动。
+   2. 布局从「四个并列页签」改成「左侧阶段 + 右侧工作台」后，样式量明显变大，
+      内联在 <head> 里会让 HTML 与样式互相淹没，改一处要滚十几屏。
+
+   命名说明：变量名沿用站点原有的 --bg / --panel / --ink / --line / --brand …
+   这套叫法，因为 app.js 里已经有内联的 `style="color:var(--ink-3)"` 之类的引用，
+   重命名会牵连到不许改的 app.js。新引入的取值一律以 --tm-* 前缀挂进来，
+   并保留 ThesisMind 原样的取色值（oklch），这样"参考它的设计系统"是可核对的，
+   不是凭印象调出来的。
+=========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   1. 设计令牌 · 亮色
+   主色刻意是「中性深灰、零彩度」（oklch 20.5% 0 0）而不是彩色：
+   这是一个学术工具，按钮不该比正文更抢眼；强调色只保留在链接与状态点上。
+--------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* ThesisMind 原值（便于逐条核对来源） */
+  --tm-radius: .625rem;
+  --tm-background: oklch(100% 0 0);
+  --tm-foreground: oklch(14.5% 0 0);
+  --tm-card: oklch(100% 0 0);
+  --tm-card-foreground: oklch(14.5% 0 0);
+  --tm-popover: oklch(100% 0 0);
+  --tm-primary: oklch(20.5% 0 0);
+  --tm-primary-foreground: oklch(98.5% 0 0);
+  --tm-secondary: oklch(97% 0 0);
+  --tm-secondary-foreground: oklch(20.5% 0 0);
+  --tm-muted: oklch(97% 0 0);
+  --tm-muted-foreground: oklch(55.6% 0 0);
+  --tm-accent: oklch(97% 0 0);
+  --tm-accent-foreground: oklch(20.5% 0 0);
+  --tm-border: oklch(92.2% 0 0);
+  --tm-input: oklch(92.2% 0 0);
+  --tm-ring: oklch(70.8% 0 0);
+  --tm-destructive: oklch(57.7% .245 27.325);
+  --tm-success: oklch(55% .13 158);
+  --tm-warning: oklch(72% .15 75);
+  --tm-link: oklch(52% .19 255);
+
+  /* 站点语义别名（原有变量名保持不变，供 app.js 里的内联样式引用） */
+  --bg: oklch(97.5% .002 250);
+  --panel: var(--tm-card);
+  --ink: var(--tm-foreground);
+  --ink-2: oklch(45% .01 250);
+  --ink-3: var(--tm-muted-foreground);
+  --line: var(--tm-border);
+  --line-2: oklch(88% .004 250);
+  --brand: var(--tm-primary);
+  --brand-ink: var(--tm-primary-foreground);
+  --brand-soft: var(--tm-secondary);
+
+  --ok: var(--tm-success);
+  --ok-soft: oklch(97% .02 158);
+  --ok-line: oklch(88% .05 158);
+  --warn: oklch(52% .13 75);
+  --warn-soft: oklch(97.5% .025 75);
+  --warn-line: oklch(90% .045 75);
+  --bad: oklch(50% .19 27);
+  --bad-soft: oklch(97% .015 27);
+  --bad-line: oklch(89% .05 27);
+
+  /* 半透明玻璃面板（ThesisMind 的 .glass-panel）。顶栏/侧栏用它做出"悬在内容之上"的层次，
+     而不是靠更深的底色——深底色在暗色模式下会反过来变成更亮的块。 */
+  --glass-bg: oklch(100% 0 0/.72);
+  --glass-border: oklch(100% 0 0/.5);
+  --glass-blur: 14px;
+
+  --radius: var(--tm-radius);
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+  --shadow: 0 1px 2px oklch(14.5% 0 0/.05), 0 4px 14px oklch(14.5% 0 0/.05);
+  --shadow-lg: 0 6px 24px oklch(14.5% 0 0/.10);
+  --sidebar-w: 300px;
+  --topbar-h: 60px;
+}
+
+/* ---------------------------------------------------------------------------
+   2. 设计令牌 · 暗色
+   注意这是**整套重定义**，不是把亮色取反、也不是加 filter:invert：
+   - 主色由"中性深灰"翻成"中性浅灰"（20.5% → 92.2%），按钮前景随之对调；
+   - 边框/输入框改成白色半透明（oklch(100% 0 0/.12)），因为暗底上的实心灰线
+     会糊成一片，半透明白线才能读出层次又不刺眼；
+   - 状态色（成功/警告/链接）在暗底上必须提亮，沿用亮色值会看不清。
+   color-scheme 一起改，浏览器才会把滚动条、自动填充、原生控件一起带进暗色。
+--------------------------------------------------------------------------- */
+.dark {
+  color-scheme: dark;
+
+  --tm-background: oklch(14.5% 0 0);
+  --tm-foreground: oklch(98.5% 0 0);
+  --tm-card: oklch(20.5% 0 0);
+  --tm-card-foreground: oklch(98.5% 0 0);
+  --tm-popover: oklch(20.5% 0 0);
+  --tm-primary: oklch(92.2% 0 0);
+  --tm-primary-foreground: oklch(20.5% 0 0);
+  --tm-secondary: oklch(26.9% 0 0);
+  --tm-secondary-foreground: oklch(98.5% 0 0);
+  --tm-muted: oklch(26.9% 0 0);
+  --tm-muted-foreground: oklch(70.8% 0 0);
+  --tm-accent: oklch(26.9% 0 0);
+  --tm-accent-foreground: oklch(98.5% 0 0);
+  --tm-border: oklch(100% 0 0/.12);
+  --tm-input: oklch(100% 0 0/.16);
+  --tm-ring: oklch(55.6% 0 0);
+  --tm-destructive: oklch(70.4% .191 22.216);
+  --tm-success: oklch(70% .14 158);
+  --tm-warning: oklch(79% .15 75);
+  --tm-link: oklch(74% .14 240);
+
+  --bg: var(--tm-background);
+  --panel: var(--tm-card);
+  --line-2: oklch(100% 0 0/.22);
+
+  --ok-soft: oklch(70% .14 158/.14);
+  --ok-line: oklch(70% .14 158/.35);
+  --warn-soft: oklch(79% .15 75/.14);
+  --warn-line: oklch(79% .15 75/.35);
+  --bad-soft: oklch(70.4% .191 22.216/.16);
+  --bad-line: oklch(70.4% .191 22.216/.38);
+
+  /* 暗色下"玻璃"要靠一点点白，不能用白底半透明——那会变成一块灰斑 */
+  --glass-bg: oklch(20.5% 0 0/.72);
+  --glass-border: oklch(100% 0 0/.10);
+
+  --shadow: 0 1px 2px oklch(0% 0 0/.4), 0 6px 18px oklch(0% 0 0/.35);
+  --shadow-lg: 0 10px 30px oklch(0% 0 0/.45);
+}
+
+/* ---------------------------------------------------------------------------
+   3. 基础
+   正文 15px/1.75 是中文长文比较舒服的档位，沿用原值不改。
+--------------------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--tm-link); }
+code, pre, .mono { font-family: ui-monospace, Consolas, "Cascadia Mono", "Courier New", monospace; }
+.hidden { display: none !important; }
+.spacer { flex: 1; }
+
+.glass-panel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+}
+
+/* ---------------------------------------------------------------------------
+   4. 顶栏
+   站点名 / 阶段进度 / 密钥 / 暗色切换挤在一行，窄屏允许换行折成两行。
+--------------------------------------------------------------------------- */
+.topbar {
+  position: sticky; top: 0; z-index: 60;
+  border-bottom: 1px solid var(--line);
+}
+.topbar .hwrap {
+  max-width: 1400px; margin: 0 auto; padding: 10px 20px; min-height: var(--topbar-h);
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.brand { font-size: 17px; font-weight: 650; letter-spacing: .2px; white-space: nowrap; }
+.brand span { color: var(--ink-3); font-weight: 400; font-size: 13px; margin-left: 8px; }
+
+/* 阶段进度：把"4 个页签"翻译成"一条流程走到第几步"，
+   只占一行文字的位置，不跟左边的阶段侧栏抢视觉重量。 */
+.flow {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-3);
+  padding: 4px 12px; border: 1px solid var(--line); border-radius: var(--radius-pill);
+  background: var(--panel); white-space: nowrap;
+}
+.flow .bar-dots { display: flex; gap: 4px; }
+.flow i {
+  width: 16px; height: 4px; border-radius: var(--radius-pill);
+  background: var(--line-2); display: block;
+}
+.flow i.on { background: var(--brand); }
+/* 走过的阶段与当前阶段区分开：全靠同一个实心色的话，
+   看不出"还剩几段"，进度条就退化成装饰了。 */
+.flow i.done { background: color-mix(in oklab, var(--brand) 45%, var(--line)); }
+.flow b { color: var(--ink); font-weight: 600; }
+
+.keybox { display: flex; align-items: center; gap: 8px; }
+.keybox input {
+  width: 210px; padding: 7px 10px; font-size: 13px;
+}
+.keybadge {
+  font-size: 12px; padding: 3px 9px; border-radius: var(--radius-pill); white-space: nowrap;
+  border: 1px solid var(--line-2); color: var(--ink-3); background: var(--panel);
+}
+.keybadge.on { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+
+/* 暗色切换：三个状态（亮/暗/跟随系统）用纯文字标出当前值，
+   图标只做辅助——只给图标的话用户没法知道现在是"暗色"还是"跟随系统"。 */
+.themebtn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.themebtn .ico { font-size: 14px; line-height: 1; }
+
+/* ---------------------------------------------------------------------------
+   5. 骨架：左侧阶段侧栏 + 右侧工作台
+   用 grid 而不是 float/flex，是因为"300px + 自适应"这种两列关系在 grid 里
+   一行写得清楚，且窄屏只要改 grid-template-columns 就能收成一列。
+--------------------------------------------------------------------------- */
+.shell {
+  max-width: 1400px; margin: 0 auto; padding: 20px;
+  display: grid; gap: 20px;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  align-items: start;
+}
+
+.sidebar {
+  position: sticky; top: calc(var(--topbar-h) + 20px);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 14px; display: flex; flex-direction: column; gap: 12px;
+}
+
+/* 侧栏里的阶段条：display:contents 是为了让 #tabbar 这个容器"消失"，
+   它渲染出的阶段按钮直接参与侧栏的纵向 flex 排列。
+   这样 index.html 里的静态阶段项和 app.js 动态渲染的按钮是同一套布局，
+   不会出现"静态好看、动态渲染后走样"。 */
+#tabbar { display: contents; }
+
+.stage {
+  appearance: none; width: 100%; text-align: left; cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--ink-2); font-size: 14px;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.stage:hover { background: var(--tm-accent); color: var(--ink); }
+.stage .stage-num {
+  flex: 0 0 24px; height: 24px; line-height: 24px; text-align: center;
+  border: 1px solid var(--line-2); border-radius: 50%;
+  font-size: 12px; font-weight: 700; color: var(--ink-3);
+}
+.stage .stage-text { flex: 1; display: flex; flex-direction: column; line-height: 1.35; min-width: 0; }
+.stage .stage-text strong { font-weight: 600; font-size: 13.5px; }
+.stage .stage-text small { font-size: 12px; color: var(--ink-3); }
+.stage .stage-dot {
+  flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2);
+}
+
+/* 阶段状态：done（走过）/ active（当前）/ 默认（没开始）/ disabled（还没做）。
+   当前阶段额外加一条左侧竖条，因为只靠底色在暗色模式下区分度不够——
+   深浅两套取值里，"浅灰块 vs 深灰块"的对比度都不足以当唯一线索。 */
+.stage.done .stage-dot { background: var(--ok); }
+.stage.active {
+  background: var(--tm-accent); color: var(--ink);
+  border-color: var(--line); box-shadow: inset 3px 0 0 var(--brand);
+}
+.stage.active .stage-num { border-color: var(--brand); color: var(--brand-ink); background: var(--brand); }
+.stage.active .stage-dot { background: var(--brand); box-shadow: 0 0 0 4px var(--line); }
+
+/* 未实现的阶段（答辩材料）用 disabled 明确表达"点不动"，
+   而不是让它看起来能点、点下去才发现没内容。 */
+.stage:disabled { opacity: .5; cursor: not-allowed; }
+.stage:disabled:hover { background: transparent; }
+
+/* 侧栏底部：当前阶段与流程完成度常驻，不随主区滚动 */
+.sidebar-foot {
+  margin-top: auto; border-top: 1px solid var(--line); padding-top: 12px;
+  font-size: 12.5px; color: var(--ink-3); display: flex; flex-direction: column; gap: 8px;
+}
+.sidebar-foot .stage-current { color: var(--ink-2); }
+.sidebar-foot .stage-current b { color: var(--ink); }
+/* 完成度是一句"已完成 n/5 个阶段"，由 app.js 写入，样式上不需要额外装饰 */
+.sidebar-foot .stage-summary { color: var(--ink-3); }
+.sidebar-foot a { color: var(--ink-3); }
+.sidebar-foot a:hover { color: var(--ink-2); }
+
+/* ---------------------------------------------------------------------------
+   6. 工作台与卡片
+--------------------------------------------------------------------------- */
+.workspace { min-width: 0; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* 阶段底部的"下一步"出口。这个块由 app.js 在 boot 时注入到每个 panel 的末尾，
+   结构不在 index.html 里，所以样式必须在这里先备好——否则注入出来的按钮
+   会是一个贴着卡片外沿、没有间距的裸元素。
+   做成"整块可点的下一步"，而不是再加一张信息卡片：连续工作流的重点就是
+   让出口一眼可见，不该和正文抢注意力。 */
+.stage-next {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  flex-wrap: wrap; margin: 0 0 16px;
+  padding: 14px 20px; border: 1px dashed var(--line-2); border-radius: var(--radius);
+  background: var(--tm-muted);
+}
+.stage-next-btn { flex: 0 0 auto; }
+.stage-next-hint { font-size: 13px; color: var(--ink-3); }
+.stage-next .note { margin: 0; flex: 1 1 100%; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 18px 20px; margin-bottom: 16px;
+}
+.card > h2 { margin: 0 0 4px; font-size: 16px; font-weight: 650; }
+.card > h2 .step {
+  display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center;
+  border-radius: 50%; background: var(--brand-soft); color: var(--brand);
+  font-size: 12px; margin-right: 8px; font-weight: 700;
+}
+.hint { color: var(--ink-3); font-size: 13px; margin: 0 0 14px; }
+.hint strong { color: var(--ink-2); }
+
+/* ---------------------------------------------------------------------------
+   7. 表单
+--------------------------------------------------------------------------- */
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+label.f { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }
+input[type=text], input[type=number], input[type=password], select, textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm); font-size: 14px; background: var(--panel); color: var(--ink);
+  font-family: inherit;
+}
+textarea { resize: vertical; line-height: 1.7; }
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--line-2); box-shadow: 0 0 0 3px var(--tm-input);
+}
+::placeholder { color: var(--ink-3); opacity: 1; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+
+/* 主按钮的 hover 用 color-mix 从主色推出来，而不是写死一个更深的蓝：
+   暗色模式下主色是浅灰，写死的深蓝会让按钮hover时直接变黑、文字读不出来。 */
+button.btn {
+  appearance: none; border: 1px solid var(--brand); background: var(--brand); color: var(--brand-ink);
+  padding: 9px 18px; border-radius: var(--radius-sm); font-size: 14px; cursor: pointer;
+  font-family: inherit; font-weight: 500;
+}
+button.btn:hover { background: color-mix(in oklab, var(--brand) 86%, var(--ink)); border-color: color-mix(in oklab, var(--brand) 86%, var(--ink)); }
+button.btn:disabled { opacity: .5; cursor: not-allowed; }
+button.ghost {
+  appearance: none; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink-2);
+  padding: 9px 16px; border-radius: var(--radius-sm); font-size: 14px; cursor: pointer; font-family: inherit;
+}
+button.ghost:hover { border-color: var(--ink-3); color: var(--ink); }
+button.ghost:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---------------------------------------------------------------------------
+   8. 进度条
+--------------------------------------------------------------------------- */
+.progress { margin-top: 14px; display: none; }
+.progress.on { display: block; }
+.bar { height: 6px; background: var(--line); border-radius: var(--radius-pill); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--brand); transition: width .3s; }
+.pmsg { font-size: 13px; color: var(--ink-2); margin-top: 7px; min-height: 20px; }
+
+/* ---------------------------------------------------------------------------
+   9. 状态提示
+   四态（默认/err/ok/warn）在暗色下不能沿用亮色的浅色底，
+   所以 soft/line 两组变量在两套主题里各给一次取值。
+--------------------------------------------------------------------------- */
+.note {
+  padding: 10px 13px; border-radius: var(--radius-sm); font-size: 13.5px; margin: 12px 0;
+  border: 1px solid var(--line); background: var(--tm-muted); color: var(--ink-2);
+}
+.note.err { border-color: var(--bad-line); background: var(--bad-soft); color: var(--bad); }
+.note.ok { border-color: var(--ok-line); background: var(--ok-soft); color: var(--ok); }
+.note.warn { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn); }
+
+/* ---------------------------------------------------------------------------
+   10. 结果区
+--------------------------------------------------------------------------- */
+.stat { display: flex; gap: 22px; flex-wrap: wrap; margin: 4px 0 14px; }
+.stat div { font-size: 13px; color: var(--ink-3); }
+.stat b { display: block; font-size: 21px; color: var(--ink); font-weight: 650; line-height: 1.3; }
+
+/* 稿件正文区：亮色下用比卡片略暗的底，暗色下反过来要比卡片略亮，
+   否则"凹进去的内容块"在暗色里会变成一块纯黑，边界完全消失。 */
+.md {
+  background: var(--tm-muted); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 16px 18px; max-height: 620px; overflow: auto; font-size: 14px; line-height: 1.8;
+  white-space: pre-wrap; word-break: break-word;
+}
+.md h1 { font-size: 18px; margin: 4px 0 10px; }
+.md h2 { font-size: 16px; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.md h3 { font-size: 14.5px; margin: 14px 0 6px; }
+.md table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
+.md th, .md td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+.md th { background: var(--tm-secondary); font-weight: 600; }
+.md blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+
+.topic {
+  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px 16px;
+  margin-bottom: 12px; background: var(--panel);
+}
+.topic h3 { margin: 0 0 6px; font-size: 15px; font-weight: 650; }
+.topic h3 .idx {
+  display: inline-block; min-width: 22px; height: 22px; line-height: 22px; text-align: center;
+  background: var(--brand-soft); color: var(--brand); border-radius: 6px;
+  font-size: 12px; margin-right: 8px; font-weight: 700;
+}
+.topic .meta { font-size: 12.5px; color: var(--ink-3); margin-bottom: 8px; }
+.topic .meta em { font-style: normal; color: var(--ink-2); }
+.topic .brief { font-size: 13.5px; color: var(--ink-2); white-space: pre-wrap; }
+
+/* 题目卡片可点：点标题会把题目带到写作阶段（app.js 绑的是 .topic h3 的点击）。
+   给出 hover 反馈，否则用户不会发现这里可以点。 */
+.topic h3 { cursor: pointer; }
+.topic:hover { border-color: var(--line-2); }
+.topic:hover h3 { color: var(--tm-link); }
+
+.tags { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
+.tag {
+  font-size: 11.5px; padding: 2px 8px; border-radius: var(--radius-pill);
+  background: var(--tm-muted); color: var(--ink-2); border: 1px solid var(--line);
+}
+.tag.ok { background: var(--ok-soft); color: var(--ok); border-color: var(--ok-line); }
+.tag.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad-line); }
+.tag.warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-line); }
+
+table.list { border-collapse: collapse; width: 100%; font-size: 13px; }
+table.list th, table.list td { border-bottom: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+table.list th { color: var(--ink-3); font-weight: 600; background: var(--tm-muted); }
+table.list tr:hover td { background: var(--tm-accent); }
+
+details.adv { margin-top: 10px; }
+details.adv summary { cursor: pointer; font-size: 13px; color: var(--ink-3); }
+details.adv summary:hover { color: var(--ink-2); }
+details.adv > div { margin-top: 10px; }
+
+/* ---------------------------------------------------------------------------
+   11. 文件拖放区
+--------------------------------------------------------------------------- */
+.dropzone {
+  position: relative; border: 2px dashed var(--line-2); border-radius: var(--radius);
+  padding: 26px 20px; text-align: center; background: var(--tm-muted);
+  transition: border-color .15s, background .15s; cursor: pointer;
+}
+.dropzone:hover { border-color: var(--ink-3); background: var(--tm-accent); }
+.dropzone.dragover { border-color: var(--brand); background: var(--tm-accent); }
+.dropzone.busy { opacity: .6; cursor: progress; }
+.dropzone input[type=file] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
+}
+.dz-icon { font-size: 26px; line-height: 1.2; }
+.dz-main { font-size: 14px; color: var(--ink-2); margin-top: 4px; }
+.dz-sub { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
+
+/* 导入结果表格里的状态徽标 */
+.fkind {
+  display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: var(--radius-pill);
+  background: var(--tm-muted); border: 1px solid var(--line); color: var(--ink-2);
+}
+.fkind.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad-line); }
+.fkind.warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-line); }
+
+/* ---------------------------------------------------------------------------
+   12. 页脚
+--------------------------------------------------------------------------- */
+footer {
+  max-width: 1400px; margin: 0 auto; padding: 0 20px 40px;
+  color: var(--ink-3); font-size: 12.5px;
+}
+footer a { color: var(--ink-3); }
+footer a:hover { color: var(--ink-2); }
+
+/* ---------------------------------------------------------------------------
+   13. 响应式：<900px
+   侧栏不能继续占 300px——那会把工作台挤到几乎没宽度。改为顶部横向可滚动的阶段条：
+   保留"一条流程"的阅读顺序，只是把它从竖排改成横排。
+   侧栏底部的会话摘要在这个宽度下收起，避免和阶段条抢位置。
+--------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); padding: 14px; gap: 14px; }
+
+  .sidebar {
+    position: sticky; top: var(--topbar-h); z-index: 50;
+    flex-direction: row; align-items: stretch; gap: 8px;
+    padding: 8px; overflow-x: auto; overflow-y: hidden;
+    border-radius: 0 0 var(--radius) var(--radius);
+    -webkit-overflow-scrolling: touch;
+  }
+  #tabbar { display: flex; gap: 8px; }
+
+  .stage {
+    width: auto; flex: 0 0 auto; gap: 8px; padding: 7px 12px;
+    border-color: var(--line); background: var(--panel);
+  }
+  .stage .stage-text small { display: none; }
+  .stage.active { box-shadow: inset 0 -3px 0 var(--brand); }
+  .sidebar-foot { display: none; }
+
+  .topbar .hwrap { padding: 10px 14px; gap: 10px; }
+  .brand span { display: none; }
+  .keybox input { width: 150px; }
+  .flow { order: 3; }
+}
+
+@media (max-width: 560px) {
+  .brand { font-size: 15.5px; }
+  .keybox { flex: 1 1 100%; }
+  .keybox input { flex: 1; width: auto; }
+  .card { padding: 14px; }
+  .stat { gap: 14px; }
+}
+
+/* 尊重系统的"减少动态效果"：进度条与按钮的过渡在晕动敏感的用户那里只是噪音 */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
