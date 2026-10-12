@@ -394,6 +394,12 @@
           <button class="ghost" id="btnAigcReduce" disabled>降 AIGC 率改写</button>
           <button class="ghost" id="btnAigcDocx" disabled>导出改写稿 Word</button>
         </div>
+        <div class="note" id="aigcPolicyNote">
+          前两项<strong>不花钱</strong>：查重自查与 AI 味体检都是纯本地计算。
+          <br><strong>「降 AIGC 率改写」默认关闭</strong>——它依赖的改写服务的模型凭据由
+          <em>本站服务</em>配置（该服务不支持转发访客凭据），费用记在服务提供方而不是你的 Key 上，
+          所以本站默认不开。需要时由站主设置 <code>SUITE_ALLOW_AIGC_REDUCE=1</code> 开启。
+        </div>
         <div class="progress" id="integrityProg">
           <div class="bar"><i id="integrityBar"></i></div>
           <div class="pmsg" id="integrityMsg"></div>

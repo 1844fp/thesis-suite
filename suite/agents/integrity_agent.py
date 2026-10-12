@@ -27,7 +27,8 @@ class IntegrityAgent(Agent):
             "aigc_score": {"handler": self.aigc_score, "needs_key": False,
                            "desc": "AI 味体检：11 项风格指标 + 29 条规则，不需要 Key"},
             "aigc_reduce": {"handler": self.aigc_reduce, "needs_key": False,
-                            "desc": "分段改写降低 AI 味，带保真校验与复检（服务端可能需要模型）"},
+                            "desc": "分段改写降低 AI 味（默认关闭：费用记在站主 Key 上，"
+                                    "站主设 SUITE_ALLOW_AIGC_REDUCE=1 才开）"},
             "aigc_export_docx": {"handler": self.aigc_export_docx, "needs_key": False,
                                  "desc": "把改写后的文本导出为 Word"},
         }
@@ -91,7 +92,37 @@ class IntegrityAgent(Agent):
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     async def aigc_reduce(self, ctx: Context, params: dict, creds) -> dict:
+        """降 AIGC 率改写。
+
+        **这一步的模型费用不由访客承担，所以默认关闭。**
+        ``aigc-reducer`` 的 HTTP 接口不接受 base_url/api_key/model，它只读自己的
+        ``.env``——也就是说走这条链路时调用记在**那个服务配置的 Key**上。
+        实测那台服务的 ``.env`` 里确实配着站主的 Key。若默认开放，
+        公网访客每点一次"改写"都在消耗站主的余额，这与本站的 BYOK 定位直接冲突。
+
+        所以默认只开放**纯本地的** ``aigc_score``（体检不调模型、不花钱），
+        改写要站主显式设置 ``SUITE_ALLOW_AIGC_REDUCE=1`` 才可用。
+        这不是技术限制，是**计费归属**的决定，必须由站主来做——
+        工具替站主决定"帮别人付钱"是不合适的。
+        """
+        import os
+
         from .. import aigc
+
+        if os.environ.get("SUITE_ALLOW_AIGC_REDUCE", "").strip().lower() not in {
+            "1", "true", "yes", "on",
+        }:
+            return {
+                "ok": False,
+                "error": (
+                    "降 AIGC 改写当前未开放。"
+                    "原因是这一步的模型调用费用记在**本站服务配置的 Key** 上，而不是你自己的 Key"
+                    "（上游服务不支持转发访客凭据）。站主可用 SUITE_ALLOW_AIGC_REDUCE=1 开启。"
+                ),
+                "credentials_note": aigc.CREDENTIAL_POLICY,
+                "disabled_reason": "billing_belongs_to_site_owner",
+                "available_instead": ["aigc_score", "duplication"],
+            }
 
         text = params.get("text") or ""
         if not text.strip():
@@ -109,7 +140,6 @@ class IntegrityAgent(Agent):
             if result.get("ok") is False:
                 ctx.fail(ev, str(result.get("error"))[:120])
                 return result
-            # 改写结果存进黑板：作者可能接着导出 Word 或送回评估阶段
             new_text = result.get("text") or result.get("revised") or ""
             if new_text:
                 ctx.put("aigc_revised", new_text)
