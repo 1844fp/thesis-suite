@@ -70,6 +70,38 @@ class CredentialError(ValueError):
     """凭据不可用，消息可直接展示给访客。"""
 
 
+#: 站点自己的模型凭据（环境变量配置，仅站主可见）。
+#:
+#: 为什么要有这一层：本站原本是纯 BYOK（访客自带 Key）。但公开部署时，
+#: 让每个访客先去申请一个 API Key 会挡掉绝大多数人。所以加上"服务器出 Key"这条兜底：
+#: **访客没填时用服务器的，填了就用他自己的**。
+#:
+#: 与上游"借用邻居项目 .env"的区别（这个区别很重要，别混）：
+#: 上游那套是从**服务器磁盘上的其它项目**悄悄借密钥，访客不知道、也无法拒绝；
+#: 这里是**站主显式配置**的一项部署设置，并且是否启用、用了谁的钱，
+#: 都会通过 /api/topics/options 如实告诉访客。显式配置与静默借用是两件事。
+SERVER_KEY_ENV = "SUITE_SERVER_LLM_KEY"
+SERVER_BASE_ENV = "SUITE_SERVER_LLM_BASE"
+SERVER_MODEL_ENV = "SUITE_SERVER_LLM_MODEL"
+
+
+def server_credentials() -> Credentials:
+    """读站点自己配置的模型凭据。没配就返回空凭据（功能退回 BYOK）。"""
+    key = os.environ.get(SERVER_KEY_ENV, "").strip()
+    if not key:
+        return Credentials()
+    return Credentials(
+        api_key=key,
+        base_url=os.environ.get(SERVER_BASE_ENV, "").strip(),
+        model=os.environ.get(SERVER_MODEL_ENV, "").strip(),
+    )
+
+
+def server_key_enabled() -> bool:
+    """站点是否配置了自己的 Key（前端据此决定还显不显示"填 Key"输入框）。"""
+    return bool(os.environ.get(SERVER_KEY_ENV, "").strip())
+
+
 @dataclass
 class Credentials:
     """一次请求的模型凭据。``api_key`` 为空表示访客没配，应走离线/演示模式。"""
@@ -118,10 +150,35 @@ def check_base_url(base_url: str) -> str:
 
 
 def from_headers(headers: Any) -> Credentials:
-    """从请求头解析凭据。只读这三个头，不做任何回退。"""
+    """从请求头解析凭据，**访客没有时退回站点自己配置的**。
+
+    优先级：访客填的 > 站点配置的 > 空（功能退回离线模式）。
+
+    这里对每一档都**只取非空值**，不做"空串继续往下找"那种写法——
+    本项目在 BYOK 防线里吃过那个亏：`os.environ.get(k) or env.get(k, "")`
+    遇到空串会继续往下读，结果读到了别的项目的密钥。
+    密钥回退必须是**显式的、只认非空**的。
+    """
     get = headers.get
+    visitor_key = _clean(get(HEADER_KEY))
+    if visitor_key:
+        return Credentials(
+            api_key=visitor_key,
+            base_url=check_base_url(get(HEADER_BASE)),
+            model=_clean(get(HEADER_MODEL)),
+        )
+
+    # 访客没填：用站点自己的。
+    server = server_credentials()
+    if server.configured:
+        # 访客可能只填了地址/模型而没填 Key——那也允许，地址更具体就用他的。
+        base = check_base_url(get(HEADER_BASE)) or server.base_url
+        model = _clean(get(HEADER_MODEL)) or server.model
+        return Credentials(api_key=server.api_key, base_url=base, model=model)
+
+    # 两边都没有：返回空凭据，由调用方决定走离线模式还是报错。
     return Credentials(
-        api_key=_clean(get(HEADER_KEY)),
+        api_key="",
         base_url=check_base_url(get(HEADER_BASE)),
         model=_clean(get(HEADER_MODEL)),
     )

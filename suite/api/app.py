@@ -22,6 +22,8 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from . import agents as agents_api  # noqa: E402
 from . import gather, kb, review, topics, writing  # noqa: E402
+from .. import credentials as creds_mod  # noqa: E402
+from .. import ratelimit  # noqa: E402
 
 WEB_DIR = SUITE_ROOT / "web"
 
@@ -65,6 +67,58 @@ def create_app() -> FastAPI:
     # 先注册别的路由可以避免有人用一个叫 "topics" 的 agent 名去抢真实路由。
     app.include_router(agents_api.router)
 
+    @app.middleware("http")
+    async def rate_limit_middleware(request, call_next):
+        """限流。**默认关闭**——站主设 SUITE_RATE_LIMIT=60 才生效。
+
+        放在中间件而不是每个路由里：这样"哪些接口要计数"只需维护一处
+        （``ratelimit.COUNTED_PREFIXES``），加接口时不容易漏。
+        静态资源与健康检查不计入，否则打开一次页面就把额度用掉。
+        """
+        allowed, remaining, retry = ratelimit.check(request, request.url.path)
+        if not allowed:
+            return JSONResponse(
+                {"detail": f"请求过于频繁，请 {retry} 秒后重试。",
+                 "retry_after": retry},
+                status_code=429,
+                headers={"Retry-After": str(retry)},
+            )
+        response = await call_next(request)
+        if remaining >= 0:
+            response.headers["X-RateLimit-Remaining"] = str(remaining)
+        return response
+
+    @app.get("/api/deployment", tags=["系统"])
+    def deployment() -> dict:
+        """部署形态：访客需不需要自己填 Key、有没有限流。
+
+        这个接口存在的唯一理由是**把"谁在付钱"如实告诉访客**。
+        站点用自己的 Key 时，访客有权知道这一点——否则他会以为是自己配置的结果，
+        而在一个"反正不花我的钱"的预期下大量使用。
+        """
+        server = creds_mod.server_credentials()
+        return {
+            "ok": True,
+            "server_key": {
+                "enabled": creds_mod.server_key_enabled(),
+                # 只给脱敏串：前端要显示"当前用的哪个 Key"，但永远不该拿到明文
+                "masked": server.masked() if server.configured else "",
+                "model": server.model or "",
+                "base_url": server.base_url or "",
+            },
+            "visitor_key": {
+                "allowed": True,
+                "note": "访客也可以填自己的 Key，填了就用他自己的（优先于本站的）。",
+            },
+            "rate_limit": ratelimit.stats(),
+            "billing_note": (
+                "本站配置了自己的模型凭据，访客无需填写即可使用；"
+                "若访客填了自己的 Key，则优先使用访客的。"
+                if creds_mod.server_key_enabled() else
+                "本站未配置模型凭据，需要访客填写自己的 API Key（或使用不花钱的功能）。"
+            ),
+        }
+
     @app.get("/api/health", tags=["系统"])
     def health() -> dict:
         """服务自检：确认两套上游代码都导入成功。"""
@@ -81,8 +135,13 @@ def create_app() -> FastAPI:
             "suite_root": info["suite_root"],
             # BYOK 的结构性保证要在运行态可自证：这两项由 suite/boot.py 的封印产生，
             # 光写在注释里没法验证，所以如实透出到健康检查里。
-            "server_key_present": info.get("server_key_present"),
             "key_fallback_neutralized": info.get("key_fallback_neutralized"),
+            # 服务器是不是"自己也在用 Key"。这与上面那项**不是同一件事**：
+            # 上面说的是"绝不去磁盘上别处借密钥"，这里说的是"站主显式配置了本站凭据"。
+            # 早先这里读的是 boot.describe() 的 server_key_present，而那个字段由
+            # boot 的封印逻辑产生（封印会把 LLM_API_KEY 从环境里删掉），
+            # 于是在"站主配了 Key"的部署上它反而恒为 False——字段名与实际含义对不上。
+            "server_key_configured": creds_mod.server_key_enabled(),
         }
 
     @app.get("/api/capabilities", tags=["系统"])

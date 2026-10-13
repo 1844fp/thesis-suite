@@ -507,10 +507,37 @@ footer a:hover { color: var(--ink-2); }
   .stat { gap: 14px; }
 }
 
-/* 尊重系统的"减少动态效果"：进度条与按钮的过渡在晕动敏感的用户那里只是噪音 */
-@media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+/* 本站已配置模型凭据时，把 Key 输入框收起成一个小图标式入口。
+   为什么不是直接删掉：访客**仍然可以**填自己的 Key（那样优先用他的，
+   例如他想用自己的额度或换模型）。所以是"收起"而不是"移除"——
+   点一下或聚焦时展开。 */
+.keybox.server-side input {
+  width: 0; padding: 0; border: 0; opacity: 0;
+  transition: width .18s ease, padding .18s ease, opacity .18s ease;
 }
+.keybox.server-side input:focus {
+  width: 200px; padding: 7px 10px; border: 1px solid var(--line-2); opacity: 1;
+}
+.keybox.server-side:hover input {
+  width: 200px; padding: 7px 10px; border: 1px solid var(--line-2); opacity: 1;
+}
+
+/* 顶部关于"谁在付钱"的说明条 */
+.billing-note {
+  font-size: 12px; color: var(--ink-3);
+  background: var(--tm-muted, #f7f8fa);
+  border: 1px solid var(--tm-border, var(--line));
+  border-radius: 8px; padding: 6px 10px; margin-bottom: 12px; line-height: 1.6;
+}
+.billing-note strong { color: var(--ink-2); }
+
+/* 尊重系统的"减少动态效果"：进度条与按钮的过渡在晕动敏感的用户那里只是噪音。
+   注意：这一段曾被后续编辑覆盖过一次（改 CSS 时容易连带删掉文件末尾的块），
+   补回时特意放在文件最末尾，减少再被覆盖的机会。 */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
 
 /* ===========================================================================
    本轮新增：agent 状态面板、大纲、查重与模板结果的样式

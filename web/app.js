@@ -90,6 +90,11 @@ function hideProgress(wrapEl) { wrapEl.classList.remove('on'); }
 /* ------------------------------------------------------------------ 凭据 */
 const LLM = {
   key: '', provider: '', base: '', model: '', providers: {},
+  //: 本站是否配置了自己的模型凭据。为真时访客**不需要**填 Key，
+  //: 顶部那个输入框会收起成一行说明——否则访客会以为自己必须去申请一个 API Key，
+  //: 而实际上直接用就行。
+  serverSide: false,
+  serverMasked: '',
 
   load() {
     try { Object.assign(this, JSON.parse(localStorage.getItem(LS_KEY) || '{}')); } catch (_) { /* 忽略损坏值 */ }
@@ -104,21 +109,43 @@ const LLM = {
   },
   headers() {
     const h = { 'Content-Type': 'application/json' };
+    // 访客填了 Key 就带上去（会用他自己的，优先于本站的）；没填就不带，
+    // 由服务端决定用本站凭据还是走离线模式。
     if (this.key) h['X-LLM-Key'] = this.key;
     const preset = this.providers[this.provider] || {};
     const base = (this.base || '').trim() || preset.base_url || '';
     const model = (this.model || '').trim() || preset.model || '';
-    if (base) h['X-LLM-Base'] = base;
-    if (model) h['X-LLM-Model'] = model;
+    // 只有访客自己填了 Key 时才带地址与模型：否则会让"本站 Key + 访客预设地址"
+    // 混搭，那可能不是站主预期的组合。
+    if (this.key) {
+      if (base) h['X-LLM-Base'] = base;
+      if (model) h['X-LLM-Model'] = model;
+    }
     return h;
   },
-  get ready() { return !!this.key.trim(); },
+  get ready() { return !!(this.key.trim() || this.serverSide); },
+  get usingServer() { return !this.key.trim() && this.serverSide; },
   label() {
     const preset = this.providers[this.provider] || {};
     return preset.label || this.provider || '未选服务商';
   },
   paint() {
     const badge = $('keyBadge');
+    const box = $('keybox');
+    if (this.serverSide) {
+      // 本站出 Key：收起输入框，只留一行说明。
+      if (box) box.classList.add('server-side');
+      badge.className = 'keybadge on';
+      badge.textContent = this.key.trim()
+        ? '使用你自己的 Key'
+        : '本站已配置模型，直接可用';
+      badge.title = this.key.trim()
+        ? '你填了 Key，将优先使用你自己的'
+        : `本站凭据 ${this.serverMasked || ''}；填自己的 Key 可优先使用你自己的`;
+      return;
+    }
+    // 本站没有 Key：保持原来的 BYOK 行为
+    if (box) box.classList.remove('server-side');
     badge.className = 'keybadge' + (this.ready ? ' on' : '');
     badge.textContent = this.ready ? '已配置 · ' + this.label() : '未填密钥（仅离线出题）';
   },
@@ -1606,6 +1633,19 @@ async function boot() {
   AgentPanel.start();
 
   LLM.load();
+  // 先问部署形态：本站有没有配 Key、要不要访客自填。
+  // 必须**先于** paint()，否则会先按"需要填 Key"渲染一次再跳变。
+  try {
+    const dep = await api('/api/deployment');
+    LLM.serverSide = !!(dep.server_key || {}).enabled;
+    LLM.serverMasked = (dep.server_key || {}).masked || '';
+    LLM.billingNote = dep.billing_note || '';
+    if (LLM.serverSide) {
+      const k = $('apiKey');
+      if (k) k.placeholder = '想用自己的 Key？填在这里（可选）';
+    }
+  } catch (_) { /* 读不到就按 BYOK 处理，功能不受影响 */ }
+
   try {
     await topicOptions();
   } catch (err) {
