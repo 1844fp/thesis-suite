@@ -7,6 +7,8 @@
 * **PDF**    —— 用 PyMuPDF **逐页**取文本。逐页是有意的：页码是学术引用的一部分，
   ``材料原文（第 3 页）`` 比 ``材料原文`` 有用得多，而且读者要能回查。
 * **DOCX**   —— 用 python-docx 取段落与表格文字（Word 稿子里表格常含关键数据）。
+  **旧版二进制 ``.doc`` 不支持**，会被明确拒绝并告知"另存为 .docx"——
+  让它掉进"无法识别的类型"里，用户不知道下一步该做什么。
 * **Markdown / 纯文本** —— 直接用标准库读，顺带做编码探测。
 * **HTML**   —— 用标准库的 HTMLParser 剥标签，不引第三方。
 * **CSV**    —— 标准库 csv 转成对齐文本，方便模型读懂表格。
@@ -361,6 +363,13 @@ def extract(filename: str, data: bytes) -> Extracted:
         return Extracted(filename=name, error="这是个压缩包（可能是 .xlsx/.pptx），暂不支持。")
     if ext == ".rtf":
         return Extracted(filename=name, error="暂不支持 RTF，请另存为 PDF 或 .docx。")
+    if ext == ".doc":
+        # 老的二进制 .doc 不是 zip，python-docx 读不了。**说清怎么解决**，
+        # 而不是让它掉进"无法识别的文件类型"里——那句话没告诉用户下一步做什么。
+        return Extracted(
+            filename=name,
+            error="暂不支持旧版 .doc（二进制格式）。请在 Word 里「另存为」.docx 后重新上传。",
+        )
 
     try:
         if ext == ".pdf":

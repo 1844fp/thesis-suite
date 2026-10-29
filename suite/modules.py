@@ -28,16 +28,29 @@ MODULES: tuple[dict, ...] = (
     {
         "id": "proposal",
         "n": "2",
-        "name": "开题报告",
-        "desc": "把文献与依据找齐：导入文件、抽成证据、核验真伪",
+        "name": "参考文献与知识库",
+        "desc": "推荐参考文献；论文RAG知识库：入库 → 文档库 → 检索 / 总结 / 对比 / 问答",
         "panel": "gather",
-        "actions": ["gather.import", "gather.extract", "gather.verify", "gather.export"],
+        "actions": ["refs.recommend", "refs.to_kb", "kb.upload", "kb.search", "kb.doc_delete",
+                    "pqa.index", "pqa.ask", "pqa.brief"],
         "needs_key": True,
-        "note": "导入与核验不需要 Key；只有「抽成证据」这一步要模型。",
+        "note": "参考文献推荐、导出、入库、文档库与「文档检索」都不需要 Key；"
+                "只有总结 / 对比 / 问答要模型（并且要先建索引）。",
+    },
+    {
+        "id": "report",
+        "n": "3",
+        "name": "生成开题报告",
+        "desc": "三层依据逐节成稿：本地知识库 + 联网真实文献 + 模型知识；参考文献按正文引用机械汇总",
+        "panel": "proposal",
+        "actions": ["proposal.options", "proposal.import_plan", "proposal.generate"],
+        "needs_key": True,
+        "note": "「导入任务书/模板读出框架与要求」不需要 Key（本地解析 + 入库）；"
+                "只有「逐节生成」要模型。生成时联网检索会自动补充真实文献，可关闭。",
     },
     {
         "id": "draft",
-        "n": "3",
+        "n": "4",
         "name": "写初稿",
         "desc": "依据三层来源逐章生成正文，数字与引用会被逐条校验",
         "panel": "writing",
@@ -47,7 +60,7 @@ MODULES: tuple[dict, ...] = (
     },
     {
         "id": "revise",
-        "n": "4",
+        "n": "5",
         "name": "修改与评估",
         "desc": "53 个检查器 + 文献核验 + 审稿意见书，按意见定点改写",
         "panel": "review",
@@ -58,7 +71,7 @@ MODULES: tuple[dict, ...] = (
     },
     {
         "id": "integrity",
-        "n": "5",
+        "n": "6",
         "name": "查重与降 AIGC 率",
         "desc": "文档内部重复自查 + 参考文献可核验性；本地风格指标体检与改写",
         "panel": "integrity",
@@ -68,7 +81,7 @@ MODULES: tuple[dict, ...] = (
     },
     {
         "id": "defense",
-        "n": "6",
+        "n": "7",
         "name": "答辩",
         "desc": "由稿件生成答辩稿（陈述 + 预计提问）与演示幻灯片",
         "panel": "defense",

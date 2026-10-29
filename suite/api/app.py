@@ -15,13 +15,12 @@ from ..boot import SUITE_ROOT
 
 boot.prepare()
 
-from fastapi import FastAPI  # noqa: E402
+from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
-from fastapi.staticfiles import StaticFiles  # noqa: E402
+from fastapi.responses import JSONResponse, Response  # noqa: E402
 
 from . import agents as agents_api  # noqa: E402
-from . import gather, kb, review, topics, writing  # noqa: E402
+from . import gather, kb, paperqa as paperqa_api, proposal as proposal_api, references as refs_api, review, topics, writing  # noqa: E402
 from .. import credentials as creds_mod  # noqa: E402
 from .. import ratelimit  # noqa: E402
 
@@ -60,6 +59,14 @@ def create_app() -> FastAPI:
 
     app.include_router(topics.router)
     app.include_router(gather.router)
+    # 参考文献推荐 / PaperQA2 都是「开题报告」阶段的能力，路由各自独立
+    # （/api/refs/* 与 /api/pqa/*），而不是塞进 gather 的前缀下：
+    # 它们的凭据需求与 gather 不同（推荐与导出根本不需要 Key），
+    # 前缀相同会让人误以为整个 gather 都要 Key。
+    app.include_router(refs_api.router)
+    app.include_router(paperqa_api.router)
+    # 开题报告生成（/api/proposal/*）：以「参考文献与知识库」阶段存下的资料为依据成稿。
+    app.include_router(proposal_api.router)
     app.include_router(writing.router)
     app.include_router(review.router)
     app.include_router(kb.router)
@@ -169,13 +176,50 @@ def create_app() -> FastAPI:
                     "note": "抽取需要模型；DOI 核验走 Crossref，不需要 Key。",
                 },
                 {
-                    "id": "writing",
-                    "name": "写作助手",
-                    "summary": "只依据证据撰写，逐章生成、可回退版本、自动挂引用编号。",
-                    "steps": ["确认证据库", "定章节结构", "逐章生成", "导出"],
+                    "id": "references",
+                    "name": "参考文献推荐",
+                    "summary": "按选题从公开文献库检索 10~20 篇参考文献，按文献等级、"
+                               "被引量、时效与开放获取综合排序，可导出与一键入知识库。",
+                    "steps": ["填选题与关键词", "生成推荐清单", "导出 GB/T 7714 或 BibTeX",
+                              "选中文献存入知识库"],
+                    "needs_key": False,
+                    "offline": False,
+                    "note": "检索、排序、导出、入库全部不需要 Key；填了 Key 才追加一次"
+                            "模型相关性精排。被引量来自 OpenAlex；下载量公开库没有，"
+                            "一列如实显示为「—」。",
+                },
+                {
+                    "id": "paperqa",
+                    "name": "PaperQA2 文献简报",
+                    "summary": "用 PaperQA2 对选中的文献建本地索引，可提问，"
+                               "也可一键产出八节文献简报或多篇对比综述。",
+                    "steps": ["选文献", "建立索引", "提问 / 出简报"],
                     "needs_key": True,
                     "offline": False,
-                    "note": "强制「无证据不落笔」：正文里的数字与引用必须能在证据库里找到。",
+                    "note": "建索引与提问都要模型（对每篇文献调用一次做摘要与向量化）；"
+                            "索引建好后复用缓存。中文与 CNKI PDF 的三处兼容处理见 README。",
+                },
+                {
+                    "id": "report",
+                    "name": "开题报告",
+                    "summary": "三层依据逐节成稿：本地知识库 + 联网检索到的真实文献 + 模型自身知识；"
+                               "可导入任务书/模板自动读出框架与要求；参考文献按正文引用机械汇总。",
+                    "steps": ["导入任务书/模板或填题目", "确认小节与写作要求", "选择依据来源",
+                              "逐节生成", "导出 Markdown / Word"],
+                    "needs_key": True,
+                    "offline": False,
+                    "note": "「导入任务书读出框架与要求」不需要 Key（本地解析 + 入库）；"
+                            "只有「逐节生成」要模型。联网检索在生成时逐节进行，可关闭；"
+                            "模型自身知识关不掉，但那部分不会被挂上引用编号。",
+                },
+                {
+                    "id": "writing",
+                    "name": "写作助手",
+                    "summary": "可从 Word/PDF 导入写作要求与正文并直接出初稿，也可只重写某一章；逐章生成、可回退版本、自动挂引用编号。",
+                    "steps": ["导入 Word/PDF 或填题目", "确认章节结构", "逐章生成", "单独重写某章", "导出"],
+                    "needs_key": True,
+                    "offline": False,
+                    "note": "解析上传文档不需要 Key（读要求时需要）；正文里的数字与引用必须能在依据里找到。",
                 },
                 {
                     "id": "review",
@@ -214,15 +258,49 @@ def create_app() -> FastAPI:
         return {"ok": True, "dropped": STORE.drop(sid)}
 
     # ---- 前端 -------------------------------------------------------------
-    if WEB_DIR.is_dir():
-        app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+    #
+    # 为什么前端资源用"整块读进内存"而不是 FileResponse / StaticFiles：
+    #
+    # FileResponse（以及 StaticFiles 内部）会先 os.stat 拿到文件大小，把它写进
+    # Content-Length，然后再打开文件做流式发送。**两次操作之间文件如果被改写变大**，
+    # 实际发送的字节就会超过声明的长度，uvicorn 直接抛
+    #     RuntimeError: Response content longer than Content-Length
+    # 并中止这个响应——浏览器看到的是页面加载失败。
+    #
+    # 本项目的 web/ 目录是会被频繁改写的（改前端时保存一次就变一次），实测日志里
+    # 这条异常出现了 72 次。前端资源都是几十 KB 的小文本，整块读出来再返回，
+    # 字节与 Content-Length 天然一致，这个竞态就不存在了。
+    #
+    # 取舍：读文件与写文件之间若真撞上，可能返回"刚写了一半"的内容（并发写场景），
+    # 但那是显示层的一次性异常，刷新即可；**不会让服务端抛错中止连接**。
+    # 开发环境这个取舍是划算的。
+    _ASSET_TYPES = {
+        ".html": "text/html; charset=utf-8",
+        ".js": "application/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".svg": "image/svg+xml",
+        ".ico": "image/x-icon",
+    }
+
+    def _serve_asset(name: str) -> Response:
+        path = (WEB_DIR / name).resolve()
+        # 目录穿越防护：只允许 WEB_DIR 下的文件。
+        if not str(path).startswith(str(WEB_DIR.resolve())) or not path.is_file():
+            raise HTTPException(status_code=404, detail=f"资源不存在：{name}")
+        data = path.read_bytes()
+        media = _ASSET_TYPES.get(path.suffix.lower(), "application/octet-stream")
+        return Response(content=data, media_type=media)
 
     @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        page = WEB_DIR / "index.html"
-        if not page.is_file():
-            raise RuntimeError(f"前端文件缺失：{page}")
-        return FileResponse(page, media_type="text/html; charset=utf-8")
+    def index() -> Response:
+        return _serve_asset("index.html")
+
+    # 前端直接引用 /static/app.js 与 /static/theme.css；这里显式列出而不是整目录挂载，
+    # 既避开上面的竞态，也顺带收紧了暴露面（vendor/ 之类不会被顺手serve出去）。
+    @app.get("/static/{name}", include_in_schema=False)
+    def static_asset(name: str) -> Response:
+        return _serve_asset(name)
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon() -> JSONResponse:

@@ -95,6 +95,22 @@ def main(argv: list[str] | None = None) -> int:
     print("  提示     : 访客自带 API Key，服务器不保存任何密钥")
     print("=" * 64, flush=True)
 
+    # 语义向量在**后台**预热。import torch 约 30 秒、加载模型约 7 秒，
+    # 放在这里等它就绪等于站点启动要卡 40 秒——不可接受。
+    # 预热期间检索照常工作（纯关键词），完成后自动升级为混合检索。
+    # 只在这里启动、不在 create_app 里启动，是为了让测试用的 TestClient
+    # 不会每次都拉起一个 500 MB 的 torch 进程。
+    try:
+        from . import embedding as embedding_mod
+
+        if embedding_mod.AUTOSTART and embedding_mod.available():
+            embedding_mod.warmup(wait=False)
+            print("  语义检索 : 后台预热中（完成后自动启用混合检索）")
+        else:
+            print("  语义检索 : 未启用（缺少向量依赖或已关闭），检索走关键词")
+    except Exception as exc:  # noqa: BLE001 - 预热失败绝不能挡住启动
+        print(f"  语义检索 : 预热启动失败（{type(exc).__name__}），检索走关键词")
+
     # reload=False：本项目的模块树依赖 sys.path 引导，热重载会重复执行引导逻辑。
     uvicorn.run(create_app(), host=args.host, port=args.port, log_level="info",
                 log_config=log_config, reload=False)

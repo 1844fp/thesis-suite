@@ -69,6 +69,17 @@ class WebRecord:
     venue: str = ""
     citations: int | None = None
     score: float = 0.0
+    #: 期刊的 ISSN。``""`` 表示**该源没给**（Crossref 的 select 里没取它），
+    #: ``"-"`` 表示源明确说没有。参考文献模块用它当"这本来是不是正规期刊"的
+    #: 交叉证据之一——注意它只是证据之一，单独缺 ISSN 不能判定期刊有问题。
+    issn: str = ""
+    #: 源给出的载体类型（journal / repository / conference…），同样只当证据。
+    venue_type: str = ""
+    #: 开放获取与全文直链。**不是每个源都有**：OpenAlex 有（``open_access`` 字段
+    #: 与 best_oa_location），Crossref / arXiv 没有确定信息。为 None 表示"该源不提供"，
+    #: 与"明确不是开放获取"不是一回事，所以参考文献模块只把它当成**加分项**。
+    open_access: bool = False
+    oa_url: str = ""
     retrieved_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
 
     @property
@@ -145,6 +156,158 @@ def _abstract_from_inverted(inv: dict | None) -> str:
     return _clean_text(" ".join(word for _, word in positions))
 
 
+#: 明显是机构名而不是人名的词。OpenAlex 的 ``author.display_name`` 绝大多数时候
+#: 是人名，但偶发地把机构塞进来（实测见过 "School of Economics"、"University of …"）。
+#: 这里把这类词挡掉——把机构写进作者列，比留空更误导。
+_INSTITUTION_WORDS = (
+    "university", "college", "school", "institute", "academy", "faculty",
+    "department", "center", "centre", "laboratory", "hospital", "bureau",
+    "大学", "学院", "研究院", "研究所", "医院", "中心",
+)
+
+
+def _looks_like_person(name: str) -> bool:
+    text = (name or "").strip()
+    if len(text) < 2 or len(text) > 40:
+        return False
+    low = text.lower()
+    return not any(word in low for word in _INSTITUTION_WORDS)
+
+
+#: Crossref 的 ``type`` 用的是细粒度值（journal-article / proceedings-article /
+#: posted-content …），而 OpenAlex 用粗粒度值（journal / conference / repository …）。
+#: 两个源混在一起用时，细粒度值会被误判成"异常载体类型"（实测把
+#: ``journal-article`` 当成异常打了一堆无意义的提示），所以在这里统一到粗粒度口径。
+_VENUE_TYPE_MAP = {
+    "journal-article": "journal",
+    "journal-issue": "journal",
+    "journal-volume": "journal",
+    "proceedings-article": "conference",
+    "proceedings": "conference",
+    "book-chapter": "book series",
+    "book-part": "book series",
+    "book-section": "book series",
+    "monograph": "book",
+    "edited-book": "book",
+    "reference-book": "book",
+    "posted-content": "repository",
+    "dissertation": "repository",
+    "report": "report",
+    "dataset": "dataset",
+    "component": "component",
+    "peer-review": "peer-review",
+    "standard": "standard",
+}
+
+
+def normalize_venue_type(raw: str) -> str:
+    """把细粒度载体类型归一到粗粒度口径。认不出来的返回小写原值。"""
+    text = (raw or "").strip().lower()
+    return _VENUE_TYPE_MAP.get(text, text)
+
+
+def _display_names(authorships: list[dict]) -> list[str]:
+    """从 OpenAlex 的 ``authorships`` 里取人名，中文名一律排成「姓 名」。
+
+    **不能只用 ``display_name``**：它有时是机构名（实测出现过 "School of Economics"），
+    一旦混进作者列，导出的参考文献就带着一条根本不存在的作者。
+
+    中文名的语序必须自己定。实测 OpenAlex 的原始数据（``select=authorships``）:
+
+    ==================  ===========  ============  ================
+    display_name        family       given         raw_author_name
+    ==================  ===========  ============  ================
+    'jiyuan huang'      None         None          'huang, jiyuan'
+    '卫军朝'             None         None          '卫军朝'
+    '于倩 单'            None         None          '于倩 单'   ← 出版商给错了
+    '蜜 郭'              None         None          '郭, 蜜'    ← 出版商给错了
+    ==================  ===========  ============  ================
+
+    三条结论：
+    1. ``family`` / ``given`` **常常整个缺失**（前四条都是 None），所以不能只靠它们；
+       有它们时 OpenAlex 是**按「名 姓」拼 display_name 的**（西文习惯），
+       所以中文名要用 ``family + given`` 重建，否则会写出「平 陈」这种错名。
+    2. 中文名有时是一整串没有空格（``'卫军朝'``），那就原样用——
+       硬拆反而会把「欧阳锋」拆错。
+    3. 只有空格分隔、且**末段是单字**时才敢重排。中文姓氏绝大多数是单字，
+       而「名」极少是单字；反过来（首段单字）说明已经是「姓 名」了，不动。
+       这条启发式把 ``'于倩 单'`` 修成「单于倩」而把 ``'欧阳 锋'``（末段单字）
+       误排成「锋欧阳」——这是已知的代价，但输入本身已是错的，无从判断。
+    """
+    out: list[str] = []
+    for item in authorships or []:
+        inner = item.get("author") or {}
+        raw = str(item.get("raw_author_name") or "").strip()
+        name = _clean_text(str(inner.get("display_name") or "")) or _clean_text(raw)
+        family = _clean_text(str(inner.get("family") or ""))
+        given = _clean_text(str(inner.get("given") or ""))
+        if not name and family:
+            name = f"{family} {given}".strip()
+
+        if name and _looks_like_person(name):
+            if family and given and _has_cjk(family + given):
+                # CJK 且有明确的姓/名字段：display_name 是「名 姓」，重建为「姓 名」。
+                name = f"{family}{given}" if len(family) == 1 else f"{family} {given}"
+            elif _has_cjk(name) and " " in name.strip():
+                name = _fix_cjk_split(name)
+        if _looks_like_person(name):
+            out.append(name)
+    return out
+
+
+#: 常见复姓。用来**阻止**把复姓拆开：``'欧阳 锋'`` 如果按"末段单字是姓"去倒装，
+#: 会得到「锋欧阳」。遇到复姓一律不动。
+COMPOUND_SURNAMES = (
+    "欧阳", "太史", "端木", "上官", "司马", "东方", "独孤", "南宫", "万俟", "闻人",
+    "夏侯", "诸葛", "尉迟", "公羊", "赫连", "澹台", "皇甫", "宗政", "濮阳", "公冶",
+    "太叔", "申屠", "公孙", "慕容", "仲孙", "钟离", "长孙", "宇文", "司徒", "鲜于",
+    "司空", "闾丘", "子车", "亓官", "司寇", "巫马", "公西", "颛孙", "壤驷", "公良",
+    "漆雕", "乐正", "宰父", "谷梁", "拓跋", "夹谷", "轩辕", "令狐", "段干", "百里",
+    "呼延", "东郭", "南门", "羊舌", "微生", "梁丘", "左丘", "东门", "西门",
+)
+
+
+def _fix_cjk_split(name: str) -> str:
+    """把「名 姓」形式的中文名倒成「姓名」。**只在有把握时动手。**
+
+    实测 OpenAlex 对中文刊的作者名给出的是**「名 姓」**顺序（西文习惯）：
+    ``'庆豪 马'``→马庆豪、``'平 陈'``→陈平、``'洁 孔'``→孔洁、
+    ``'棵瑞 杨'``→杨棵瑞、``'相承 李'``→李相承 —— 五条样本全部符合，
+    而 ``family`` / ``given`` 两个字段在这些记录里**整个是空的**，
+    raw_author_name 也常常是错的（``'郭, 蜜'`` 对应真实姓名「郭蜜」），
+    所以只能用这一串字推断。推断必须有边界，下面三条是边界：
+
+    1. 只有空格分成两段才处理，且**末段必须是单字**（中文姓氏绝大多数是单字）。
+    2. 首段是复姓（``COMPOUND_SURNAMES``）就不动 —— ``'欧阳 锋'`` 本来就是对的。
+    3. **两段都是单字时保持原样**。``'涛 江'`` 到底是「江涛」还是「涛江」，
+       从这一串字里**无法判断**（如果 OpenAlex 没倒装，它本来就是对的）。
+       这种情况宁可留一个可能倒装的名字，也不要制造一个确定错误的名字——
+       错名比名字没倒装严重得多。
+
+    另外处理一个实测到的脏数据：``'张小绢 张'`` —— 出版商把「张小绢」整串当成了姓。
+    这时重排会得到「张张小绢」（姓重复），所以首段已包含末段那个字时直接取首段。
+    """
+    parts = name.split()
+    if len(parts) != 2:
+        return name
+    given, family = parts[0], parts[1]
+    if len(family) != 1:
+        return name
+    if given in COMPOUND_SURNAMES or family in COMPOUND_SURNAMES:
+        return name
+    if len(given) == 1:
+        # 两段都只有一个字：可能本来就是「姓 名」，不做判断。
+        return name
+    # 首段已含末段那个字，说明整串本来就是「姓+名」，去掉重复的姓。
+    if given.startswith(family):
+        return given
+    return f"{family}{given}"
+
+
+def _has_cjk(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+
 class _Base:
     name = ""
     base_url = ""
@@ -169,7 +332,8 @@ class Crossref(_Base):
         params = {
             "query.bibliographic": query,
             "rows": max(1, min(limit * 2, 20)),
-            "select": "DOI,title,author,issued,container-title,abstract,URL,is-referenced-by-count",
+            "select": ("DOI,title,author,issued,container-title,abstract,URL,"
+                       "is-referenced-by-count,ISSN,type"),
         }
         if self.mailto:
             params["mailto"] = self.mailto
@@ -195,6 +359,8 @@ class Crossref(_Base):
                     url=(item.get("URL") or "").strip(),
                     venue=_clean_text((item.get("container-title") or [""])[0]),
                     citations=item.get("is-referenced-by-count"),
+                    issn="、".join(str(x) for x in (item.get("ISSN") or [])[:2]),
+                    venue_type=normalize_venue_type(str(item.get("type") or "")),
                 )
             )
         return out
@@ -208,7 +374,8 @@ class OpenAlex(_Base):
         params = {
             "search": query,
             "per-page": max(1, min(limit * 2, 25)),
-            "select": "id,doi,title,publication_year,authorships,primary_location,abstract_inverted_index,cited_by_count",
+            "select": ("id,doi,title,publication_year,authorships,primary_location,"
+                       "abstract_inverted_index,cited_by_count,open_access,best_oa_location"),
         }
         if self.mailto:
             params["mailto"] = self.mailto
@@ -221,19 +388,23 @@ class OpenAlex(_Base):
             loc = item.get("primary_location") or {}
             src = loc.get("source") or {}
             auths = item.get("authorships") or []
+            oa = item.get("open_access") or {}
+            best = item.get("best_oa_location") or {}
             out.append(
                 WebRecord(
                     source=self.name,
                     title=_clean_text(item.get("title") or ""),
                     abstract=_abstract_from_inverted(item.get("abstract_inverted_index")),
-                    authors="、".join(
-                        (a.get("author") or {}).get("display_name", "") for a in auths[:3]
-                    ).strip("、"),
+                    authors="、".join(_display_names(auths[:3])),
                     year=str(item.get("publication_year") or ""),
                     doi=re.sub(r"^https?://doi\.org/", "", str(item.get("doi") or "")),
                     url=str(item.get("id") or ""),
                     venue=_clean_text(src.get("display_name") or ""),
                     citations=item.get("cited_by_count"),
+                    issn=str(src.get("issn_l") or ""),
+                    venue_type=normalize_venue_type(str(src.get("type") or "")),
+                    open_access=bool(oa.get("is_oa")),
+                    oa_url=str(best.get("pdf_url") or best.get("landing_page_url") or ""),
                 )
             )
         return out

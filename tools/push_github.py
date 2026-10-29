@@ -31,9 +31,29 @@ ROOT = Path(__file__).resolve().parent.parent
 API = "https://api.github.com"
 
 #: 不推送的东西。与根目录 .gitignore 保持同样的口径。
-SKIP_DIRS = {"__pycache__", "data", "exports", ".cache", ".tmp", ".git"}
+#:
+#: ``logs`` 整目录排除，但 ``logs/last_draft.json`` 例外——它是被**有意提交**的
+#: 草稿缓存（远端 main 里只有这一个 logs 文件）。其余 logs 内容都是运行期产物：
+#: ``service.pid``（PID 每次启动都变）、``*.log``、``watchdog.log``。
+#: 早期只按后缀排除了 ``.log``，漏掉了 ``.pid``，于是每次同步都会冒出一个
+#: "logs/service.pid 有变化"的假待推送——它永远不该进仓库。
+SKIP_DIRS = {"__pycache__", "data", "exports", ".cache", ".tmp", ".git", "logs"}
 SKIP_NAMES = {".env", "models.json"}
-SKIP_SUFFIX = (".pyc", ".pyo", ".log")
+SKIP_SUFFIX = (".pyc", ".pyo", ".log", ".pid")
+#: logs 目录下允许进入仓库的例外（相对仓库根的 POSIX 路径）。
+KEEP_PATHS = {"logs/last_draft.json"}
+
+
+def should_skip(rel_posix: str, name: str, suffix: str) -> bool:
+    """统一的排除口径。对比工具（pending/diff）也必须调用它，
+    否则会出现"看板说有变化、实际推不上去"的假差异。"""
+    if rel_posix in KEEP_PATHS:
+        return False
+    if any(part in SKIP_DIRS for part in rel_posix.split("/")):
+        return True
+    if name in SKIP_NAMES or name.startswith("_probe"):
+        return True
+    return suffix in SKIP_SUFFIX
 
 
 def collect_files() -> list[tuple[str, bytes]]:
@@ -42,11 +62,8 @@ def collect_files() -> list[tuple[str, bytes]]:
         if not path.is_file():
             continue
         rel = path.relative_to(ROOT)
-        if any(part in SKIP_DIRS for part in rel.parts):
-            continue
-        if path.name in SKIP_NAMES or path.name.startswith("_probe"):
-            continue
-        if path.suffix in SKIP_SUFFIX:
+        rel_posix = rel.as_posix()
+        if should_skip(rel_posix, path.name, path.suffix):
             continue
         data = path.read_bytes()
         out.append((rel.as_posix(), data))

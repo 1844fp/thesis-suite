@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>论文助手 · 一条连续工作流：定题目 / 开题报告 / 写初稿 / 修改与评估 / 答辩材料</title>
+<title>论文助手 · 一条连续工作流：定题目 / 参考文献与知识库 / 生成开题报告 / 写初稿 / 修改与评估 / 查重与降 AIGC 率 / 答辩</title>
 <script>
 /* 主题预置脚本：必须在样式表之前、同步执行。
    为什么不能等 app.js：app.js 在 </body> 前加载，那时首屏已经按亮色画完了一帧，
@@ -35,7 +35,7 @@
 
 <header class="topbar glass-panel">
   <div class="hwrap">
-    <div class="brand">论文助手<span>一条连续工作流 · 定题目 / 开题报告 / 写初稿 / 修改与评估 / 答辩材料</span></div>
+    <div class="brand">论文助手<span>一条连续工作流 · 定题目 / 参考文献与知识库 / 生成开题报告 / 写初稿 / 修改与评估 / 查重与降 AIGC 率 / 答辩</span></div>
 
     <!-- 阶段进度：对应下面五个阶段，由界面脚本按当前阶段点亮。 -->
     <div class="flow" id="flow" aria-label="阶段进度">
@@ -79,37 +79,11 @@
        #tabbar 容器必须保留：app.js 的 buildStages() 会把阶段按钮渲染进它里面。 -->
   <aside class="sidebar glass-panel">
     <nav id="tabbar" aria-label="阶段导航">
-
-      <button class="stage active" data-stage="topic" type="button">
-        <span class="stage-num">1</span>
-        <span class="stage-text"><strong>定题目</strong><small>选一个能写下去的题</small></span>
-        <span class="stage-dot"></span>
-      </button>
-
-      <button class="stage" data-stage="proposal" type="button">
-        <span class="stage-num">2</span>
-        <span class="stage-text"><strong>开题报告</strong><small>攒够能引用的文献与证据</small></span>
-        <span class="stage-dot"></span>
-      </button>
-
-      <button class="stage" data-stage="draft" type="button">
-        <span class="stage-num">3</span>
-        <span class="stage-text"><strong>写初稿</strong><small>按证据逐章落笔</small></span>
-        <span class="stage-dot"></span>
-      </button>
-
-      <button class="stage" data-stage="revise" type="button">
-        <span class="stage-num">4</span>
-        <span class="stage-text"><strong>修改与评估</strong><small>查引用、改问题、出意见书</small></span>
-        <span class="stage-dot"></span>
-      </button>
-
-      <button class="stage" data-stage="defense" type="button">
-        <span class="stage-num">5</span>
-        <span class="stage-text"><strong>答辩材料</strong><small>即将上线</small></span>
-        <span class="stage-dot"></span>
-      </button>
-
+      <!-- 阶段按钮**刻意留空**：由 app.js 的 buildStages() 按 STAGES 常量渲染。
+           早先这里静态写了 5 个按钮，而 buildStages() 看到已存在 .stage 就不再注入——
+           于是阶段结构一改（改名、增删、重编号），导航就会显示上一版的名字。
+           实测就踩到了：阶段已改成 7 个、阶段 2 已改名为「参考文献与知识库」，
+           而导航还显示着 5 个旧按钮。只留一个来源，就不会再有这种漂移。 -->
     </nav>
 
     <!-- 侧栏底部：流程完成度。
@@ -196,70 +170,462 @@
       </div>
     </section>
 
-    <!-- ============ 阶段 2 · 开题报告（资料获取） ============ -->
+    <!-- ============ 阶段 2 · 参考文献与知识库 ============
+           本阶段只做两件事：① 按选题推荐参考文献 ② 把这些文献读一遍
+           （导入 PDF/Word 等资料入库 + PaperQA2 文献简报与问答）。
+           开题报告的成稿在下一个阶段「生成开题报告」里做。 -->
     <section class="panel" id="p-gather">
+
+      <!-- ============ 按选题推荐参考文献 ============
+           为什么放在这一阶段的最前面：写任何东西的第一件事是"有文献"，
+           而"证据"是从自己找来的资料里抽出来的——没有文献，后面的抽取与核验都无处落脚。
+           这一块**不需要 API Key**（只查公开库），勾了"模型精排"才与 Key 有关。 -->
       <div class="card">
-        <h2><span class="step">1</span>开题报告：把文献与证据攒起来</h2>
+        <h2>按选题推荐参考文献</h2>
         <p class="hint">
-          题目的可行性要靠文献说话。这一步的资料不会在换阶段后丢掉——
-          到了写初稿时，写作只认这里入池的证据。
-          <strong>导入文件不需要 API Key</strong>——解析在本地完成。支持
-          <strong>PDF / Word(.docx) / Markdown / 纯文本 / HTML / CSV</strong>。
-          PDF 会<strong>按页拆分</strong>，抽取出的证据会带上页码，方便回查原文。
-          解析完的文件会出现在下面的文本区里，你可以再补充或修改，然后点「抽取证据」。
+          清单由<strong>公开文献库</strong>（OpenAlex / Crossref / arXiv）检索得到，按
+          等级 / 被引 / 时效 / 开放获取加权排序，<strong>不会凭空生成条目</strong>。
+          <strong>被引数</strong>取自 OpenAlex，是跨库统计，与知网自己显示的「被引」通常不一致；
+          <strong>文献等级</strong>由本机内置的核心期刊目录匹配期刊名得出，
+          <strong>匹配不上就写「未收录/未知」，不猜</strong>——南大 CSSCI / 北大核心的目录没有公开接口，
+          请以学校图书馆的正式目录为准。
+          <strong>下载量拿不到</strong>：知网 / 万方只在网页上显示下载量，公开 API 里没有这个字段，
+          所以「下载」一列固定显示 <code>—</code>。
+          中文文献请一律用知网复核后再写进论文：公开库对中文核心刊的收录很有限，
+          而且存在同名不同刊（这类条目会带 ⚠ 标记）。
         </p>
 
-        <div class="dropzone" id="gDrop">
-          <input type="file" id="gFiles" multiple
-                 accept=".pdf,.docx,.md,.markdown,.txt,.text,.html,.htm,.csv,.tsv,.json,.bib">
-          <div class="dz-icon">📄</div>
-          <div class="dz-main">把文件拖到这里，或<strong>点击选择</strong></div>
-          <div class="dz-sub">
-            单个文件上限 25 MB，一次最多 10 个。扫描版（图片型）PDF 取不出文字，会明确提示需要 OCR。
+        <div class="grid">
+          <div>
+            <label class="f" for="refsTopic">选题 / 研究方向</label>
+            <input type="text" id="refsTopic" placeholder="例如：企业数据资产的会计确认与价值评估研究">
+          </div>
+          <div>
+            <label class="f" for="refsKeywords">关键词（逗号分隔，可留空）</label>
+            <input type="text" id="refsKeywords" placeholder="例如：数据资产, 会计确认, 价值评估">
+          </div>
+          <div>
+            <label class="f" for="refsEnglish">英文检索词（可留空；填了才会检索国际期刊）</label>
+            <input type="text" id="refsEnglish" placeholder="例如：data asset accounting recognition">
+          </div>
+          <div>
+            <label class="f" for="refsTotal">篇数</label>
+            <input type="number" id="refsTotal" value="15" min="10" max="20">
           </div>
         </div>
-        <div id="gFileList"></div>
 
-        <details class="adv" style="margin-top:14px">
-          <summary>或者：直接粘贴文本（每块资料之间用一行 <code>---</code> 分隔）</summary>
-          <div style="margin-top:10px">
-            <label class="f" for="gSources">资料原文</label>
-            <textarea id="gSources" rows="12" placeholder="第一份资料的题名或内容…&#10;&#10;---&#10;&#10;第二份资料…&#10;&#10;---&#10;&#10;参考文献（可整段粘贴，用于真伪核验）：&#10;[1] 张三. 某某研究[J]. 某某学报, 2020, 12(3): 45-56. DOI: 10.xxxx/xxxxx"></textarea>
-          </div>
-        </details>
+        <!-- 精排是**可选增强**，不是前置条件：没填 Key 时后端会静默跳过并说明原因，
+             所以这里不做"没 Key 就置灰"的处理——那会让用户误以为整块功能要 Key。 -->
+        <div style="margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--tm-muted)">
+          <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13.5px">
+            <input type="checkbox" id="refsRerank" style="margin-top:4px;width:auto">
+            <span>
+              <strong>用模型做相关性精排（需要 API Key，可选）</strong>
+              <span style="display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px">
+                对候选文献再打一次「与选题贴不贴题」的分并据此重排（<strong>只改顺序，不改成员</strong>）。
+                没填 Key 时这一步自动跳过，清单照常给出，并会写明"没精排"的原因——
+                精排失败不会让整份推荐失败。
+              </span>
+            </span>
+          </label>
+        </div>
 
         <div class="row">
-          <button class="btn" id="btnExtract">抽取证据</button>
-          <button class="ghost" id="btnVerify" disabled>核验文献真伪</button>
-          <button class="ghost" id="btnGatherClear" disabled>清空证据库</button>
+          <button class="btn" id="btnRefsRun">生成推荐清单</button>
+          <button class="ghost" id="btnRefsExportGbt" disabled>导出 GB/T 7714</button>
+          <button class="ghost" id="btnRefsExportBib" disabled>导出 BibTeX</button>
+          <button class="ghost" id="btnRefsExportMd" disabled>导出 Markdown</button>
+          <button class="ghost" id="btnRefsToKb" disabled>选中文献存入知识库</button>
         </div>
-        <div class="progress" id="gatherProg">
-          <div class="bar"><i id="gatherBar"></i></div>
-          <div class="pmsg" id="gatherMsg"></div>
+        <div class="progress" id="refsProg">
+          <div class="bar"><i id="refsBar"></i></div>
+          <div class="pmsg" id="refsMsg"></div>
         </div>
-        <div id="gatherNote"></div>
+        <div id="refsNote"></div>
       </div>
-      <div class="card hidden" id="gatherResultCard">
-        <h2>证据库</h2>
-        <div class="stat" id="gatherStat"></div>
-        <div class="row" style="margin-top:0">
-          <button class="ghost" id="btnExportGbt">导出参考文献表（GB/T 7714）</button>
-          <button class="ghost" id="btnExportBib">导出 BibTeX</button>
-          <button class="ghost" id="btnExportMd">导出 Markdown 清单</button>
+
+      <!-- 推荐结果单独一张卡片：清单一出来就是九列内容，混在输入卡片里
+           会把"换一组检索词再跑一次"这件事挤到看不见的地方。 -->
+      <div class="card hidden" id="refsResultCard">
+        <h2>推荐清单</h2>
+        <div class="stat" id="refsStat"></div>
+        <div id="refsSummary"></div>
+        <div id="refsSources" style="margin-top:14px"></div>
+        <div id="refsList" style="margin-top:14px"></div>
+      </div>
+
+      <!-- 口径与限制**单独一张卡片**：它解释"下载量为什么拿不到""等级为什么可能是未收录/未知"。
+           如果只把这层意思写在提示里，用户看完清单就走了，而这正是最容易误读的地方。 -->
+      <div class="card hidden" id="refsWarnCard">
+        <h2>口径与限制</h2>
+        <div id="refsWarn"></div>
+      </div>
+
+      <!-- ============ 论文RAG知识库 ============
+           这一张卡片就是本阶段的知识库本体：入库 → 文档库 → 索引 → 检索/总结/对比/问答。
+           四个功能页签的顺序按"使用频率 × 是否花钱"排：
+             · 文档检索放在第一个：它**不调模型、不花钱、即时返回**，是最常用的入口；
+             · 总结/对比/问答都要建 PaperQA2 索引并逐次调模型，所以排在后面。
+           入库与四个功能**共用同一个知识库**（不是两套）：开题报告生成时检索的
+           就是这里入的资料，入一次两边都可用。 -->
+      <div class="card">
+        <h2>论文RAG知识库</h2>
+        <p class="hint">
+          把论文 PDF / Word 放进来，然后<strong>检索、总结、对比、问答</strong>。
+          入库、分块与检索<strong>全部在本地完成，不需要 API Key</strong>；
+          只有「论文总结 / 跨文档对比 / 问答」要模型，并且会先为选中的文献建一个本地索引。
+          同一批资料也会被下一步「生成开题报告」当作依据检索到——<strong>这里入一次，两边都可用</strong>。
+        </p>
+
+        <div id="pqaStatus"></div>
+
+        <!-- ---- ① 入库 ---- -->
+        <h3 style="font-size:14px;margin:18px 0 6px">① 把资料放进知识库</h3>
+        <p class="hint" style="margin-top:0">
+          支持 <strong>PDF / Word(.docx) / Markdown / 纯文本 / HTML / CSV</strong>，一次最多 10 个、单个 ≤ 25 MB。
+          PDF 会<strong>按页入库</strong>，检索到的片段因此带页码、方便回查原文；
+          扫描版（图片型）PDF 取不出文字，会明确提示需要 OCR，而不是假装入库成功。
+        </p>
+        <div class="dropzone" id="kbDrop">
+          <input type="file" id="kbFiles" multiple
+                 accept=".pdf,.docx,.doc,.md,.markdown,.txt,.text,.html,.htm,.csv,.tsv,.json,.bib">
+          <div class="dz-icon">📚</div>
+          <div class="dz-main">把文件拖到这里，或<strong>点击选择</strong></div>
+          <div class="dz-sub">
+            一次可以选任意多个（前端每 8 个一批依次上传，200 篇也能一次选）。
+            单个文件 ≤ 25 MB。入库后立刻出现在下面的文档库，也立刻可被检索。
+          </div>
         </div>
-        <div id="gatherList" style="margin-top:14px"></div>
+        <!-- 选文件夹：论文往往是一个目录几十上百个 PDF，逐个点选不现实。
+             webkitdirectory 让浏览器把整个目录交上来，再走同一套分批上传。 -->
+        <div class="row" style="margin-top:10px">
+          <button class="ghost" id="kbPickFolder" type="button">选择整个文件夹</button>
+          <input type="file" id="kbFilesDir" webkitdirectory directory multiple
+                 style="display:none" aria-hidden="true">
+          <span style="font-size:12.5px;color:var(--ink-3)">
+            目录里会按后缀自动筛掉非文献文件，只入库 PDF / Word / Markdown / 文本 / HTML / CSV
+          </span>
+        </div>
+        <!-- 语义索引状态：检索是"关键词 + 向量"两路融合，而向量要本地模型。
+             模型冷启动要 30 秒左右，所以这里如实显示"现在到底是哪种模式"。 -->
+        <div id="ragEmbedStatus" style="margin-top:12px"></div>
+        <div class="progress" id="kbProg">
+          <div class="bar"><i id="kbBar"></i></div>
+          <div class="pmsg" id="kbMsg"></div>
+        </div>
+        <div id="kbNote"></div>
+        <div id="kbImportResult"></div>
+
+        <!-- ---- ② 文档库 ---- -->
+        <h3 style="font-size:14px;margin:22px 0 6px">② 文档库</h3>
+        <p class="hint" style="margin-top:0">
+          <strong>一篇文件 = 一篇文献</strong>（整篇入库，不再按页拆成多条）。
+          勾选文献，下面的四个功能才有作用对象；引用仍能精确到页——
+          切块跨页时写成「第 7–8 页」而不是只报起始页。
+        </p>
+        <div class="row" style="margin-top:0">
+          <button class="ghost" id="btnPqaAll" type="button">全选</button>
+          <button class="ghost" id="btnPqaNone" type="button">清空选择</button>
+          <button class="ghost" id="btnRagRefresh" type="button">刷新列表</button>
+          <span style="font-size:12.5px;color:var(--ink-3)" id="pqaCount">已选 0 篇</span>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="ghost" id="btnRagDeleteSel" type="button">删除选中</button>
+          <button class="ghost" id="btnRagClearAll" type="button">清空整个知识库</button>
+          <span style="font-size:12.5px;color:var(--ink-3)">
+            删除不可撤销；「清空」要求手输「删除」二字
+          </span>
+        </div>
+        <div id="pqaDocs"></div>
+
+        <!-- ---- ③ 索引：总结/对比/问答的公共前置 ---- -->
+        <h3 style="font-size:14px;margin:22px 0 6px">③ 建立索引（总结 / 对比 / 问答 共用）</h3>
+        <p class="hint" style="margin-top:0">
+          PaperQA2 会在<strong>你勾选的文献</strong>上建一个本地索引，然后逐片段读一遍再综合，
+          所以答案比普通检索更实，代价是<strong>更慢也更贵</strong>。
+          <strong>建索引会对每篇文献调用一次模型</strong>（20 篇在慢网络下可能十几分钟），
+          建好后缓存复用，只有勾选的文献集合变化时才重建。
+          它读的是知识库里现有的内容——包括参考文献推荐存进去的<strong>摘要</strong>；
+          摘要不是全文，所以"第 3 页的公式是什么"这类问题它答不了，要看全文请入库 PDF。
+        </p>
+        <div class="row" style="margin-top:0">
+          <button class="btn" id="btnPqaIndex" disabled>建立索引（每篇调一次模型）</button>
+          <button class="ghost" id="btnPqaClearIndex" disabled>清空索引缓存</button>
+        </div>
+        <div style="margin-top:12px">
+          <label class="f" for="pqaFocus">关注焦点（供「论文总结」与「跨文档对比」使用，可留空）</label>
+          <input type="text" id="pqaFocus" placeholder="例如「数据资产的会计确认与价值评估」">
+        </div>
+
+        <!-- ---- ④ 四个功能 ---- -->
+        <h3 style="font-size:14px;margin:22px 0 6px">④ 用这个知识库做事</h3>
+        <div class="row" id="ragTabs" style="margin-top:0;gap:8px">
+          <button class="btn rag-tab" data-rag="search" type="button">文档检索</button>
+          <button class="ghost rag-tab" data-rag="sum" type="button">论文总结</button>
+          <button class="ghost rag-tab" data-rag="cmp" type="button">跨文档对比</button>
+          <button class="ghost rag-tab" data-rag="ask" type="button">问答</button>
+        </div>
+
+        <!-- 检索：唯一不花钱的功能，所以放第一个页签 -->
+        <div class="rag-pane" id="ragPaneSearch">
+          <div style="margin-top:12px">
+            <label class="f" for="ragQuery">检索词（关键词或整句话）</label>
+            <input type="text" id="ragQuery" placeholder="例如：数据资产 会计确认 计量">
+          </div>
+          <div class="row">
+            <button class="btn" id="btnRagSearch" type="button">检索</button>
+            <span style="font-size:12.5px;color:var(--ink-3)" id="ragSearchMode">
+              检索方式：读取中…
+            </span>
+          </div>
+          <div id="ragSearchNote"></div>
+          <div id="ragSearchResult"></div>
+        </div>
+
+        <div class="rag-pane hidden" id="ragPaneSum">
+          <p class="hint" style="margin-top:12px">
+            对<strong>勾选 1 篇</strong>做结构化简报（基本信息 / 研究问题 / 方法与数据 /
+            主要结论 / 创新点 / 局限 / 借鉴 / 关键术语）。用的是上面「关注焦点」。
+            需要先建立索引，并且需要 API Key。
+          </p>
+          <div class="row" style="margin-top:0">
+            <button class="ghost" id="btnPqaBrief" disabled>生成文献简报</button>
+          </div>
+        </div>
+
+        <div class="rag-pane hidden" id="ragPaneCmp">
+          <p class="hint" style="margin-top:12px">
+            对<strong>勾选 ≥2 篇</strong>做同维度对比（共识 / 分歧 / 方法差异 / 演进脉络 / 研究空白），
+            并明确点出哪些结论因为数据口径不同而<strong>不可直接比较</strong>。用的是上面「关注焦点」。
+          </p>
+          <div class="row" style="margin-top:0">
+            <button class="ghost" id="btnPqaDigest" disabled>生成对比综述</button>
+          </div>
+        </div>
+
+        <div class="rag-pane hidden" id="ragPaneAsk">
+          <div style="margin-top:12px">
+            <label class="f" for="pqaQuestion">要问这批文献的问题</label>
+            <textarea id="pqaQuestion" rows="2"
+                      placeholder="例如：这几篇文献对数据资产入表后的计量方法各自是怎么处理的？分歧在哪？"></textarea>
+          </div>
+          <div class="row">
+            <button class="ghost" id="btnPqaAsk" disabled>提问</button>
+            <span style="font-size:12.5px;color:var(--ink-3)">回答会流式逐字显示，并附可回查的引用来源</span>
+          </div>
+        </div>
+
+        <div class="progress" id="pqaProg">
+          <div class="bar"><i id="pqaBar"></i></div>
+          <div class="pmsg" id="pqaMsg"></div>
+        </div>
+        <div id="pqaNote"></div>
+      </div>
+      <div class="card hidden" id="pqaAnswerCard">
+        <h2>PaperQA2 回答</h2>
+        <div class="md" id="pqaAnswer"></div>
+        <div id="pqaAnswerSources"></div>
+      </div>
+      <div class="card hidden" id="pqaBriefCard">
+        <h2 id="pqaBriefTitle">文献简报</h2>
+        <div id="pqaBriefBody"></div>
+        <div id="pqaBriefSources"></div>
+      </div>
+
+      <!-- ============ 生成开题报告（入口卡片） ============
+           生成动作本身属于下一个阶段「生成开题报告」，这里只放一个明确入口，
+           避免用户在两个阶段之间找不到该点哪里。 -->
+      <div class="card">
+        <h2>下一步：生成开题报告</h2>
+        <p class="hint">
+          文献与资料备齐后，到左侧阶段的<strong>「生成开题报告」</strong>里，
+          依据知识库中的资料与证据逐节生成开题报告正文
+          （研究背景与意义 / 国内外研究现状 / 研究内容与目标 / 研究方法与技术路线 /
+          进度安排 / 参考文献）。
+        </p>
+        <div class="row">
+          <button class="btn" id="btnToProposal">去生成开题报告</button>
+        </div>
       </div>
     </section>
 
-    <!-- ============ 阶段 3 · 写初稿（写作） ============ -->
+    <!-- ============ 阶段 3 · 生成开题报告 ============
+         依据「参考文献与知识库」阶段存下的资料成稿。
+         可靠性取向：参考文献**不由模型生成**——正文引用了谁，列表里才出现谁，
+         所以不可能出现"编造一条文献"。引用编号越界与无依据数字都会被通报。 -->
+    <section class="panel" id="p-proposal">
+      <div class="card">
+        <h2>生成开题报告</h2>
+        <p class="hint">
+          依据<strong>知识库里的资料</strong>（上个阶段导入的 PDF / Word 等）逐节生成开题报告。
+          标准结构已按开题报告的评审关注点给出：研究背景与意义 / 国内外研究现状 /
+          研究内容与目标 / 研究方法与技术路线 / 可行性分析 / 进度安排 / 预期成果。
+          <strong>参考文献由系统按正文实际引用机械汇总</strong>，不是模型写的，
+          因此不会出现凭空的文献条目。
+          生成需要 API Key（见右上角）；<strong>知识库为空也能生成</strong>，
+          但会明确提示"本次没有引用依据"。
+        </p>
+
+        <div id="propStatus"></div>
+
+        <!-- ---- 入口 A：上传任务书 / 模板 / 已有开题报告 ----
+             放最上面是有意的。现实里"学校发了任务书和模板"比"我心里已经有一份完整
+             的开题报告"常见得多，而这两样东西恰好决定了框架与要求。让用户先手敲
+             七个小节、再去下面找哪里能上传，是本末倒置。
+             这一步同时把正文存进知识库，所以它不只是"读个框架"——后面的生成会
+             把任务书原文当作 K 层依据检索出来。 -->
+        <details class="adv" id="propImportBox" open>
+          <summary>入口 A：有任务书 / 模板 / 已有开题报告？先导入，自动读出框架与要求</summary>
+          <div style="margin-top:12px">
+            <p class="hint" style="margin-top:0">
+              上传学校给的<strong>任务书、开题模板</strong>，或你<strong>已经写了一半的开题报告</strong>
+              （<strong>.docx / .pdf / .md / .txt / .html / .csv</strong>，
+              单文件 ≤ 25 MB，一次最多 10 个）。
+              助手会从里面读出<strong>题目、章节框架、写作要求</strong>，填进下面的表单；
+              <strong>正文同时存进知识库</strong>，生成时作为依据被检索到——不需要再单独导入一次。
+              读框架是<strong>纯本地的关键词匹配</strong>，<strong>不需要 API Key</strong>。
+            </p>
+            <div class="dropzone" id="propDrop">
+              <input type="file" id="propFiles" multiple
+                     accept=".pdf,.docx,.doc,.md,.markdown,.txt,.text,.html,.htm,.csv,.tsv,.json,.bib">
+              <div class="dz-icon">📋</div>
+              <div class="dz-main">把任务书 / 模板拖到这里，或<strong>点击选择</strong></div>
+              <div class="dz-sub">读出框架与要求后可直接修改；正文会入库成为生成依据。</div>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <button class="btn" id="btnPropImport" disabled>读取框架与要求</button>
+            </div>
+            <div class="progress" id="propImpProg">
+              <div class="bar"><i id="propImpBar"></i></div>
+              <div class="pmsg" id="propImpMsg"></div>
+            </div>
+            <div id="propImpNote"></div>
+            <div id="propImpResult"></div>
+          </div>
+        </details>
+
+        <div class="grid">
+          <div>
+            <label class="f" for="propTitle">论文题目</label>
+            <input type="text" id="propTitle" placeholder="例如：乡村教师职业倦怠的影响因素研究">
+          </div>
+          <div>
+            <label class="f" for="propSectionCount">生成节数（留空则全部生成）</label>
+            <input type="number" id="propSectionCount" min="1" max="8" placeholder="全部">
+          </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <label class="f" for="propSections">小节（每行一个，可自行增删改）</label>
+          <textarea id="propSections" rows="7"></textarea>
+        </div>
+
+        <div style="margin-top:12px">
+          <label class="f" for="propRequirements">写作要求（来自任务书，可留空；导入后会自动填入）</label>
+          <textarea id="propRequirements" rows="3"
+                    placeholder="例如：正文不少于 8000 字；必须给出技术路线图；参考文献不少于 30 篇且近五年文献占比不低于三分之一。"></textarea>
+        </div>
+
+        <!-- ---- 依据来源：三层开关 ----
+             逐条列出来是有意的。用户要能一眼看出"这一篇到底靠什么写的"，
+             而不是只看到一个含糊的"使用知识库"开关。模型知识那一层没有开关——
+             它不可关闭（模型总是带着自己的知识写），能做的只是要求它**不许挂引用编号**，
+             并由代码在事后按数字接地复核。 -->
+        <div style="margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--tm-muted)">
+          <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">依据来源</div>
+
+          <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13.5px">
+            <input type="checkbox" id="propUseKb" checked style="margin-top:4px;width:auto">
+            <span>
+              <strong>① 本地知识库</strong>
+              <span style="display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px">
+                你导入的 PDF / Word 全文，以及参考文献推荐存进去的摘要。
+                引用会带 <strong>[n]</strong> 编号，可回查原文。
+              </span>
+            </span>
+          </label>
+
+          <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13.5px;margin-top:10px">
+            <input type="checkbox" id="propUseWeb" checked style="margin-top:4px;width:auto">
+            <span>
+              <strong>② 联网检索真实文献（Crossref / OpenAlex / arXiv）</strong>
+              <span style="display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px">
+                每一节都会去公开文献库检索一次，<strong>不需要额外配置</strong>。
+                这一层是唯一带 DOI、能点回原文的；代价是每节多花几秒到十几秒。
+                某个库限流或超时时会降级为其余来源，并在进度里如实说明。
+              </span>
+            </span>
+          </label>
+
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:13.5px;margin-top:10px;opacity:.85">
+            <input type="checkbox" checked disabled style="margin-top:4px;width:auto">
+            <span>
+              <strong>③ 模型自身知识（始终启用）</strong>
+              <span style="display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px">
+                模型必然带着自己的知识写，这一层关不掉。所以约束不在"用不用"，
+                而在<strong>不许挂引用编号</strong>：凡出自模型知识的内容都不带 [n]，
+                且正文里出现的数字会被逐条核对是否能在材料中找到——找不到就点名。
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div class="row">
+          <button class="btn" id="btnProposalRun">逐节生成</button>
+          <button class="ghost" id="btnProposalMd" disabled>导出 Markdown</button>
+          <button class="ghost" id="btnProposalDocx" disabled>导出 Word</button>
+        </div>
+
+        <div class="progress" id="propProg">
+          <div class="bar"><i id="propBar"></i></div>
+          <div class="pmsg" id="propMsg"></div>
+        </div>
+        <div id="propNote"></div>
+      </div>
+
+      <div class="card hidden" id="propResultCard">
+        <h2>开题报告</h2>
+        <div id="propCoverage"></div>
+        <div class="md" id="propBody" style="margin-top:14px"></div>
+        <div id="propRefs" style="margin-top:16px"></div>
+      </div>
+    </section>
+
+    <!-- ============ 阶段 4 · 写初稿（写作） ============ -->
     <section class="panel" id="p-writing">
+      <!-- 入口 A：有 Word/PDF 就直接上传。放在最上面是有意的——作者手里
+           本来就有一份东西（初稿、开题报告、写作要求）是最常见的情形，
+           让他先干"填题目、敲章节"这些活是本末倒置。 -->
+      <div class="card">
+        <h2><span class="step">A</span>已有 Word / PDF？直接导入生成初稿</h2>
+        <p class="hint">
+          上传论文稿、开题报告、任务书或写作要求（<strong>.docx / .pdf / .md / .txt / .html / .csv</strong>，
+          单文件 ≤ 25 MB，一次最多 10 个）。助手会从中读出<strong>题目、章节结构、写作要求</strong>，
+          并把<strong>正文切成依据块</strong>——正文里的数字与引用随后会被逐条核对。
+          <br>解析文件本身<strong>不需要 API Key</strong>；用模型读要求时才需要（没配 Key 也能用，
+          计划改由程序按文档结构推导，并会如实标注）。
+        </p>
+        <div class="dropzone" id="wDrop">
+          <input type="file" id="wFiles" multiple
+                 accept=".docx,.doc,.pdf,.md,.markdown,.txt,.html,.htm,.csv,.tsv">
+          <div class="dz-main">把文件拖到这里，或点击选择</div>
+          <div class="dz-sub">PDF 按页取文字（扫描版取不出，会明确提示）；Word 的表格也会读进来</div>
+        </div>
+        <div id="wFileList"></div>
+        <div class="progress" id="importProg">
+          <div class="bar"><i id="importBar"></i></div>
+          <div class="pmsg" id="importMsg"></div>
+        </div>
+      </div>
+
+      <!-- 入口 B：没有文档，或者想改导入出来的结构，用这一块。 -->
       <div class="card">
         <h2><span class="step">1</span>写初稿：定题目与结构</h2>
         <p class="hint">
-          写作依据分三层：<strong>A 你的资料</strong>（在「开题报告」阶段录入）、
+          写作依据分四层：<strong>D 你导入的文档</strong>（上面那份）、<strong>A 你的资料</strong>（在「参考文献与知识库」阶段录入）、
           <strong>B 联网检索</strong>（从公开文献库找到的真实文献，带 DOI）、
           <strong>C 模型自身知识</strong>。
-          A、B 两层可以挂引用编号；<strong>C 层内容不允许挂任何编号</strong>——
+          D、A、B 三层可以挂引用编号；<strong>C 层内容不允许挂任何编号</strong>——
           程序会逐个核对：编号越界、数字找不到依据，都会在生成结果里点名通报。
         </p>
         <div class="grid">
@@ -276,6 +642,10 @@
           <label class="f" for="wSections">章节结构（每行一个，可留空用默认结构）</label>
           <textarea id="wSections" rows="5" placeholder="第1章 绪论&#10;第2章 文献综述&#10;第3章 研究设计&#10;第4章 结果与分析&#10;第5章 结论与展望"></textarea>
         </div>
+        <div style="margin-top:12px">
+          <label class="f" for="wRequirements">写作要求（可选，直接进提示词）</label>
+          <textarea id="wRequirements" rows="3" placeholder="例如：全文 1.5 万字；绪论要交代政策背景；第 3 章必须说明抽样与量表来源；避免出现没有出处的百分比"></textarea>
+        </div>
         <div style="margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--tm-muted)">
           <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13.5px">
             <input type="checkbox" id="wUseWeb" checked style="margin-top:4px;width:auto">
@@ -283,7 +653,7 @@
               <strong>联网检索真实文献作为依据</strong>（推荐）
               <span style="display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px">
                 从 Crossref / OpenAlex / arXiv 检索真实文献（带 DOI 可回查），并入依据池供引用。
-                不需要额外 Key。关掉后只能依据「开题报告」阶段录入的资料 + 模型自身知识。
+                不需要额外 Key。关掉后只能依据「参考文献与知识库」阶段录入的资料 + 模型自身知识。
               </span>
             </span>
           </label>
@@ -309,7 +679,7 @@
       </div>
     </section>
 
-    <!-- ============ 阶段 4 · 修改与评估（评估） ============ -->
+    <!-- ============ 阶段 5 · 修改与评估（评估） ============ -->
     <section class="panel" id="p-review">
       <div class="card">
         <h2><span class="step">1</span>修改与评估：提交稿件</h2>
@@ -477,8 +847,17 @@
 (function () {
   'use strict';
 
-  var STAGES = ['topic', 'proposal', 'draft', 'revise', 'defense'];
-  var NAME = { topic: '定题目', proposal: '开题报告', draft: '写初稿', revise: '修改与评估', defense: '答辩材料' };
+  /* 阶段清单**只有一份**：app.js 里的 STAGES，它同时负责渲染导航。
+     这里早先自己存了一份 5 阶段的副本（数组 + 名字表），阶段结构一改就漂移，
+     于是"当前阶段：xxx"会显示旧名字。现在优先读 app.js 暴露出来的那一份，
+     读不到（例如脚本加载失败）才退回一个最小兜底，避免整段报错。 */
+  var STAGES = (window.SUITE_STAGES || []).map(function (s) { return s.id; });
+  var NAME = {};
+  (window.SUITE_STAGES || []).forEach(function (s) { NAME[s.id] = s.name; });
+  if (!STAGES.length) {
+    STAGES = ['topic', 'proposal'];
+    NAME = { topic: '定题目', proposal: '参考文献与知识库' };
+  }
 
   function paint(id) {
     var i = STAGES.indexOf(id);

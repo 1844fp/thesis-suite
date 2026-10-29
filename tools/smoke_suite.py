@@ -69,11 +69,19 @@ def main() -> int:
     schema = client.get("/api/openapi.json").json()
     routes = set(schema.get("paths") or {})
     for must in ("/api/topics/generate", "/api/gather/extract", "/api/writing/draft",
-                 "/api/review/check", "/api/review/verify"):
+                 "/api/review/check", "/api/review/verify",
+                 # 开题报告阶段新增的两块能力：参考文献推荐与 PaperQA2 文献简报。
+                 # 列在这里是有意的——路由漏注册的表现是"前端点了没反应"，
+                 # 而那是最难从后端日志里看出来的故障。
+                 "/api/refs/recommend", "/api/pqa/status", "/api/pqa/brief"):
         check(f"路由存在 {must}", must in routes, f"schema 里共 {len(routes)} 条")
     check("首页路由存在", client.get("/").status_code == 200)
     caps = client.get("/api/capabilities").json()
-    check("能力清单 4 个助手", len(caps.get("assistants") or []) == 4)
+    # 助手数量随功能增加而变，所以**断言具体 id 而不是数量**：
+    # 数量断言每次加功能都要改一遍，而且改的时候很容易顺手把期望值改错。
+    ids = {a.get("id") for a in (caps.get("assistants") or [])}
+    for must in ("topics", "gather", "writing", "review", "references", "paperqa"):
+        check(f"能力清单含 {must}", must in ids, f"实得 {sorted(ids)}")
 
     line("2. 题目生成 · 离线模式（不需要 Key）")
     opts = client.get("/api/topics/options").json()

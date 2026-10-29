@@ -39,9 +39,23 @@ COUNTED_PREFIXES = (
     "/api/gather/import",
     "/api/gather/verify",
     "/api/writing/draft",
+    # 单章重写与整篇生成一样要调模型、要联网检索，开销相当，所以一并计数。
+    "/api/writing/section",
+    "/api/writing/import-plan",
     "/api/review/opinion",
     "/api/kb/upload",
     "/api/kb/add",
+    # 开题报告：生成会逐节联网检索 + 调模型；导入会对每个文件做解析与全文索引。
+    "/api/proposal/generate",
+    "/api/proposal/import-plan",
+    # 参考文献推荐：检索三个外部库 + 可选一次模型精排。选中文献入库也要建全文索引。
+    "/api/refs/recommend",
+    "/api/refs/to-kb",
+    # PaperQA2：建索引对每篇文献调一次模型，问答与简报各自是十几次调用，
+    # 是本站单次请求里最贵的路径，必须计数。
+    "/api/pqa/index",
+    "/api/pqa/ask",
+    "/api/pqa/brief",
     "/api/agents/",
 )
 

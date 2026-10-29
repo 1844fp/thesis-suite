@@ -43,9 +43,18 @@ $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $taskName = 'ThesisSuite'
 $logDir = Join-Path $here 'logs'
-$outLog = Join-Path $logDir 'service.out.log'
-$errLog = Join-Path $logDir 'service.err.log'
-$pidFile = Join-Path $logDir 'service.pid'
+#: PID 文件与日志**必须按端口区分**。
+#:
+#: 这是一个真实踩过的坑：早先用单一的 ``logs/service.pid``，于是同时跑
+#: 8848 与 8878 两个实例时，``.\service.ps1 start -Port 8878`` 会把 8848 记下的
+#: PID 当成本端口要管的进程——**启动一个端口会把另一个端口杀掉**，
+#: 而且日志里只会看到"已停止"，完全没有线索指向 8848。
+#: 表现是"服务自己反复消失"，排查了很久才定位到共享 PID 文件。
+#: 日志同理分开：否则两个实例的 uvicorn 输出交错在一个文件里，读日志时
+#: 分不清某条 500 是哪个端口报的。
+$pidFile = Join-Path $logDir "service-$Port.pid"
+$outLog = Join-Path $logDir "service-$Port.out.log"
+$errLog = Join-Path $logDir "service-$Port.err.log"
 
 function Get-Listening {
     # 判断端口有没有进程在听。优先用 Get-NetTCPConnection（信息最全、能拿到 PID），

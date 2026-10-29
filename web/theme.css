@@ -598,3 +598,25 @@ footer a:hover { color: var(--ink-2); }
 .outline-line { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
 .outline-need { color: var(--tm-warning, var(--warn)); }
 
+/* ---------------------------------------------------------------------------
+   16. 单章重写（"按需单独生成某一部分章节"）
+   ---------------------------------------------------------------------------
+   这套控件挂在稿件正文里（每一章的标题下面），所以它必须比周围的正文"轻"：
+   作者读稿时它是干扰项，需要时才展开。于是按钮做得很小、面板默认收起（.hidden）。
+--------------------------------------------------------------------------- */
+.section-tools { display: flex; justify-content: flex-end; margin: 2px 0 10px; }
+button.ghost.mini { padding: 3px 10px; font-size: 12px; border-radius: var(--radius-sm); }
+button.btn.mini { padding: 4px 12px; font-size: 12.5px; }
+
+.rewrite-box {
+  border: 1px solid var(--line); border-left: 3px solid var(--brand);
+  border-radius: var(--radius-sm); padding: 12px 14px; margin: 0 0 14px;
+  background: var(--panel);
+}
+.rewrite-box.hidden { display: none; }
+.rewrite-box textarea { width: 100%; font-size: 13px; }
+.rw-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.rw-check { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-2); }
+.rw-check input[type=checkbox] { width: auto; }
+.rw-msg { font-size: 12.5px; color: var(--ink-3); }
+
