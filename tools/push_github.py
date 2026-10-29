@@ -108,6 +108,8 @@ def main() -> int:
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN", ""))
     parser.add_argument("--private", action="store_true", help="建私有仓库")
     parser.add_argument("--check", action="store_true", help="只做只读检查，不推送")
+    parser.add_argument("--message", "-m", default="",
+                        help="本次提交信息（不传则用默认的概括性说明）")
     args = parser.parse_args()
 
     if not args.token:
@@ -242,7 +244,14 @@ def main() -> int:
         print(f"现有分支 {branch} 在 {parents[0][:10]}，将作为父提交")
 
     payload: dict = {
-        "message": "论文助手四合一站点：题目生成 / 资料获取 / 写作 / 评估（访客自带 API Key）",
+        # 提交信息默认描述"这是什么"，但**应当由调用方按本次改动覆盖**。
+        # 早先这里写死成一句固定的功能描述，结果每次推送的提交历史都是同一句话，
+        # 看不出任何一次改了什么——提交信息是仓库历史的一部分，不能长期失真。
+        "message": args.message or (
+            "同步站点代码与智能体文档\n\n"
+            "六板块站点（定题目/开题报告/写初稿/修改与评估/查重与降AIGC/答辩）\n"
+            "配套 agents/ 智能体索引：19 个写作智能体的清单、流水线与各项目文档"
+        ),
         "tree": tree_sha,
     }
     if parents:
