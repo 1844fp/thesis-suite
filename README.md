@@ -1187,7 +1187,7 @@ thesis-suite/
 │   ├── credentials.py          BYOK：请求头 -> 上游配置对象，无任何回退
 │   ├── llm.py                  直连模型服务的薄客户端（只认显式凭据）
 │   ├── fileintake.py           文件导入：PDF/Word/Markdown/文本/HTML/CSV -> 文本（只读、不落盘）
-│   ├── rag.py                  RAG 知识库：jieba + SQLite FTS5 关键词检索 + 文献元数据表
+│   ├── rag.py                  RAG 知识库：FTS5/BM25 + 语义向量 → RRF 混合检索（缺模型降级为关键词）
 │   ├── websearch.py            公开文献库检索（OpenAlex / Crossref / arXiv）+ 作者名与载体类型归一
 │   ├── references.py           参考文献推荐：去重合并 -> 核心目录分级 -> 加权打分 -> 配比挑选 -> 导出
 │   ├── paperqa.py              PaperQA2 桥接：语料物化、凭据只进子进程 env、问答与简报
