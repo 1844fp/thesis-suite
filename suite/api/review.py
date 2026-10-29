@@ -159,9 +159,19 @@ def _load_checkers() -> list[dict]:
 
     上游注释里专门警告过：**忘了 import 不会报错，只会静默地一个检查器都没跑**。
     所以这里显式 import 并断言注册表非空。
+
+    这段话不是抄来的教条，是踩出来的：``citation_grounding``（"引用必须在证据里"）
+    注册在 ``app.agents.verify_external`` 里，**不在**下面前两个包里。
+    漏导入它时注册表是 52 条，跑检查不会报错，只是这条检查静默不跑。
+
+    更隐蔽的是它**会随调用顺序变化**：如果访客先点了别的板块（那条链路恰好
+    导入过 verify_external），数量就变成 53——同一个接口的检查器数量
+    取决于"之前点过什么"，这种不一致极难在测试里发现。
+    所以第三个 import 是必需的，它让检查器集合与调用顺序无关。
     """
     import app.checks  # noqa: F401 - 导入即注册，副作用是必需的
     import app.format.checkers  # noqa: F401 - 格式检查器也注册在这里
+    import app.agents.verify_external  # noqa: F401 - citation_grounding 注册在这里
 
     from app.framework.registry import VERIFIERS
 

@@ -40,13 +40,18 @@ def main() -> int:
     client = TestClient(create_app())
 
     print("=" * 70)
-    print("① 六个板块")
+    print("① 七个板块")
     print("=" * 70)
     r = client.get("/api/modules")
     check("GET /api/modules 200", r.status_code == 200)
     mods = r.json()["modules"]
-    check("正好六个板块", len(mods) == 6, f"{len(mods)} 个")
-    expect = [("topic", "定题目"), ("proposal", "开题报告"), ("draft", "写初稿"),
+    check("正好七个板块", len(mods) == 7, f"{len(mods)} 个")
+    # 板块已经演化到七个：原来的「开题报告」被拆成
+    # 「参考文献与知识库」（找文献、导资料、读文献）与「生成开题报告」（据库成稿）两步。
+    # 这个拆分是有道理的——找材料和写报告是两件不同的事，混在一个板块里会让人
+    # 在一堆控件里不知道该先点哪个。
+    expect = [("topic", "定题目"), ("proposal", "参考文献与知识库"),
+              ("report", "生成开题报告"), ("draft", "写初稿"),
               ("revise", "修改与评估"), ("integrity", "查重与降 AIGC 率"),
               ("defense", "答辩")]
     for (mid, mname), m in zip(expect, mods):

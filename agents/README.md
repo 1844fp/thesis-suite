@@ -17,7 +17,7 @@
 | 项目 | 智能体数 | 定位 | 代码位置 |
 |---|---|---|---|
 | **thesis-agents** | **13** | 论文多智能体框架（能力①②③⑤⑥） | `E:\AI\thesis-agents` |
-| **thesis-suite** | **6** | 六板块整合站点（对外可用） | `E:\AI\thesis-suite`（本仓库） |
+| **thesis-suite** | **6** | 七板块整合站点（对外可用） | `E:\AI\thesis-suite`（本仓库） |
 
 另有 **6 个支撑工具**不属于多智能体，但都是这条流水线上的能力单点
 （见第五节）。它们的代码不在本仓库，本目录只收录说明文档。
@@ -53,17 +53,22 @@
 
 ## 三、thesis-suite：6 个智能体
 
-把上述能力重组为对外可用的六板块站点。与原框架的区别：
+把上述能力重组为对外可用的七板块站点。与原框架的区别：
 **原框架的智能体是"能力"，这里是"板块"**——一个板块会调用多个 agent 动作。
 
-| # | 名称 | 类 | 动作数 | 对应板块 |
+| # | 名称 | 类 | 动作数 | 服务的主要板块 |
 |---|---|---|---|---|
 | 1 | `topic` | `TopicAgent` | 2 | 定题目（含 RAG 知识库） |
-| 2 | `gather` | `GatherAgent` | 4 | 开题报告 |
-| 3 | `writer` | `WriterAgent` | 4 | 写初稿 |
+| 2 | `gather` | `GatherAgent` | 4 | 参考文献与知识库 |
+| 3 | `writer` | `WriterAgent` | 6 | 生成开题报告 + 写初稿 |
 | 4 | `review` | `ReviewAgent` | 5 | 修改与评估 |
 | 5 | `integrity` | `IntegrityAgent` | 4 | 查重与降 AIGC 率 |
 | 6 | `defense` | `DefenseAgent` | 4 | 答辩 |
+
+合计 **25 个动作**。注意 agent 与板块**不是一一对应**：`writer` 同时服务
+「生成开题报告」与「写初稿」两个板块，`gather` 的动作分散在板块 1 和 2。
+这正是把"能力"与"流程"分开定义的理由——硬绑成一对一，
+要么板块被拆碎，要么动作被硬塞。
 
 这 6 个智能体可单独寻址（`POST /api/agents/{name}/{action}`）、共享会话状态、
 每次动作写事件流。详见 [projects/thesis-suite.md](projects/thesis-suite.md)。
@@ -75,7 +80,7 @@
 | 代 | 形态 | 阶段数 | 位置 | 状态 |
 |---|---|---|---|---|
 | 一代 | Python 单能力脚本集 | — | `thesis-topic-helper` 等 | 已被整合 |
-| 二代 | **Python 六板块站点** | 6 | **本仓库** / `E:\AI\thesis-suite` | 可用，本仓库内容 |
+| 二代 | **Python 七板块站点** | 7 | **本仓库** / `E:\AI\thesis-suite` | 可用，本仓库内容 |
 | 三代 | **研序 · 七阶段**（`modern/`，Node，无第三方运行依赖） | 7 | `E:\AI\codex\writing-workspace\modern` | **更新**，另有私有在线站点 |
 
 三代的关键升级（照 `UPGRADE.md` 原文）：七阶段项目工作流、持久化、稳定证据编号、

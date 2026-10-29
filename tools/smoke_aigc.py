@@ -33,8 +33,24 @@ for _p in (
     if os.path.isdir(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
 
-#: 模拟"服务没开"用的空端口。取一个高位端口，正常不会有人监听。
-DEAD_PORT = 8799
+def _free_port() -> int:
+    """取一个**真的没人监听**的端口。
+
+    原先这里硬编码 8799，并假设"高位端口正常没人用"。这个假设被打破了：
+    研序新版（`modern/` 的 `node server.mjs`）正好监听 8799，
+    于是"服务没开"的模拟变成"连到了一个不是 aigc-reducer 的服务"，
+    返回 HTTP 404 而不是连接失败，四条断言全部误失败。
+
+    教训：**测试里不要硬编码"空闲"资源**。让系统给一个真的空闲端口。
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+DEAD_PORT = _free_port()
 
 FAILURES: list[str] = []
 

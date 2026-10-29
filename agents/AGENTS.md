@@ -173,7 +173,7 @@
 |---|---|---|---|---|
 | 1 | `topic` | `TopicAgent` | 2 | 出题（离线知识库 / 联网）+ 由题目生成章节大纲 |
 | 2 | `gather` | `GatherAgent` | 4 | 导入文件、抽成证据、核验真伪、导出参考文献表 |
-| 3 | `writer` | `WriterAgent` | 4 | 逐章写初稿、按意见定点改写、导出 Markdown / Word |
+| 3 | `writer` | `WriterAgent` | 6 | 导入出初稿、逐章起草、单章重写、按意见改写、导出 Markdown / Word |
 | 4 | `review` | `ReviewAgent` | 5 | 53 个检查器、文献核验、审稿意见书、查重、模板比对 |
 | 5 | `integrity` | `IntegrityAgent` | 4 | 内部重复自查、AI 味体检、降 AIGC 改写、导出 |
 | 6 | `defense` | `DefenseAgent` | 4 | 答辩稿（陈述 + 预计提问）、幻灯片（.pptx / HTML） |
@@ -188,7 +188,9 @@
 | | `extract` | 是 |
 | | `verify` | 否 |
 | | `export` | 否 |
-| `writer` | `draft` | 是 |
+| `writer` | `import_plan`（导入 Word → 生成初稿计划） | 是 |
+| | `draft` | 是 |
+| | `section`（单章重写） | 是 |
 | | `revise` | 是 |
 | | `export_markdown` | 否 |
 | | `export_docx` | 否 |

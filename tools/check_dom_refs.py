@@ -62,9 +62,16 @@ def _is_guarded(lines: list[str], idx: int, name: str) -> bool:
         return False
     var = re.escape(m.group(1))
     window = "\n".join(lines[idx: idx + 6])
-    return bool(re.search(r"if\s*\(\s*!\s*" + var + r"\s*\)", window)
-                or re.search(r"if\s*\(\s*" + var + r"\s*==\s*null", window)
-                or re.search(var + r"\s*&&", window))
+    return bool(
+        # if (warm) warm.addEventListener(...)  —— 真值判断，本项目实际用的就是这种。
+        # 早先只认 !warm / warm == null / warm &&，于是把这种写法全判成"无条件引用"，
+        # 报了两个假警（btnEmbedWarm / btnEmbedBackfill）。
+        # 一个会喊狼来了的检查器比没有检查器更糟：真出问题时没人信它。
+        re.search(r"if\s*\(\s*" + var + r"\s*\)", window)
+        or re.search(r"if\s*\(\s*!\s*" + var + r"\s*\)", window)
+        or re.search(r"if\s*\(\s*" + var + r"\s*==\s*null", window)
+        or re.search(var + r"\s*&&", window)
+    )
 
 
 def js_refs(path: Path) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
@@ -91,15 +98,23 @@ def js_refs(path: Path) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
 
 def main() -> int:
     ids = html_ids(ROOT / "web" / "index.html")
+    # 还有一类 id 不在 index.html 里：**app.js 自己用模板字符串动态生成的**。
+    # 例如知识库面板的「启动语义索引」按钮就是运行时才拼出来的。
+    # 不把这类算进来，检查器就会持续报假警，而这恰恰是最常见的误报来源。
+    js_text = (ROOT / "web" / "app.js").read_text(encoding="utf-8", errors="replace")
+    dynamic_ids = set(re.findall(r"""id=\\?["']([A-Za-z0-9_\-]+)\\?["']""", js_text))
+    known = ids | dynamic_ids
+
     hard, soft = js_refs(ROOT / "web" / "app.js")
 
-    missing = {k: v for k, v in hard.items() if k not in ids and k not in ALLOW_MISSING}
-    missing_soft = {k: v for k, v in soft.items() if k not in ids and k not in ALLOW_MISSING}
+    missing = {k: v for k, v in hard.items() if k not in known and k not in ALLOW_MISSING}
+    missing_soft = {k: v for k, v in soft.items() if k not in known and k not in ALLOW_MISSING}
 
-    print(f"index.html 里 id 共 {len(ids)} 个；app.js 引用了 {len(hard) + len(soft)} 个不同的 id")
+    print(f"index.html 里 id 共 {len(ids)} 个；app.js 动态生成 {len(dynamic_ids)} 个；"
+          f"app.js 引用了 {len(hard) + len(soft)} 个不同的 id")
     print(f"  其中无条件引用 {len(hard)} 个，已守卫引用 {len(soft)} 个")
     if missing_soft:
-        print(f"  已守卫但 HTML 里没有的（安全，仅提示）：{', '.join(sorted(missing_soft))}")
+        print(f"  已守卫但页面里没有的（安全，仅提示）：{', '.join(sorted(missing_soft))}")
 
     if not missing:
         print("\n== 结论 ==\n  没有悬空的无条件引用。")
@@ -108,7 +123,7 @@ def main() -> int:
     print(f"\n== 危险的无条件悬空引用：{len(missing)} 个（会让页面初始化抛异常）==")
     for name, lines in sorted(missing.items()):
         where = "、".join(str(n) for n in lines[:8]) + ("…" if len(lines) > 8 else "")
-        print(f"  [危险] $('{name}')  →  index.html 里没有这个 id（app.js 行：{where}）")
+        print(f"  [危险] $('{name}')  →  页面里没有这个 id（app.js 行：{where}）")
     print("\n请删掉这些引用，或改为带守卫的写法（如 $('x') && $('x').addEventListener(...)）。")
     return 1
 

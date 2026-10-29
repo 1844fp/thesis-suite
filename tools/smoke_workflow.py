@@ -95,7 +95,8 @@ def main() -> int:
 
     stages = re.findall(r'data-stage="([a-z]+)"', html)
     print(f"  HTML 里的阶段：{stages}")
-    expected_stages = {"topic", "proposal", "draft", "revise", "integrity", "defense"}
+    expected_stages = {"topic", "proposal", "report", "draft", "revise",
+                       "integrity", "defense"}
     # 阶段按钮由 app.js 注入（HTML 里可能没有静态那一份），所以两边都看
     js_all = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
     missing = {s for s in expected_stages if f"id: '{s}'" not in js_all and s not in stages}
@@ -115,14 +116,21 @@ def main() -> int:
     print("③ 功能元素未被破坏（抽查各阶段的关键控件）")
     print("=" * 70)
     must = {
-        "topic": ["tDiscipline", "btnTopic", "topicList"],
-        "proposal": ["gDrop", "gFiles", "gSources", "btnExtract", "btnVerify"],
-        "draft": ["wTitle", "wGenre", "wSections", "wUseWeb", "btnDraft", "writeCoverage"],
-        "revise": ["rText", "btnCheck", "btnVerifyRefs", "btnOpinion", "reviewDims"],
+        "topic（定题目）": ["tDiscipline", "btnTopic", "topicList"],
+        # 「参考文献与知识库」= 参考文献推荐 + 知识库 + RAG 检索 + PaperQA2 四个功能区。
+        # 早先这里断言的是 gDrop/gFiles/btnExtract 那批旧控件，面板重建后它们已经不存在；
+        # 断言要跟着面板走，否则测试会一直失败在"控件名过时"而不是真问题。
+        "proposal（参考文献与知识库）": ["refsTopic", "btnRefsRun", "kbDrop", "kbFiles",
+                                        "ragQuery", "btnRagSearch", "pqaQuestion"],
+        "report（生成开题报告）": ["propTitle", "propSections", "btnProposalRun", "propBody"],
+        "draft（写初稿）": ["wTitle", "wGenre", "wSections", "wUseWeb", "btnDraft", "writeCoverage"],
+        "revise（修改与评估）": ["rText", "btnCheck", "btnVerifyRefs", "btnOpinion", "reviewDims"],
+        "integrity（查重与降 AIGC）": ["iText", "btnIntegrityDup", "btnAigcScore"],
+        "defense（答辩）": ["btnDefenseScript", "btnDefenseSlides", "defenseScriptBody"],
     }
     for stage, ids in must.items():
         missing = [i for i in ids if f'id="{i}"' not in html]
-        check(f"{stage} 阶段的关键控件齐全", not missing, f"缺 {missing}" if missing else "")
+        check(f"{stage} 的关键控件齐全", not missing, f"缺 {missing}" if missing else "")
 
     print("\n" + "=" * 70)
     print("④ 接口连通性")

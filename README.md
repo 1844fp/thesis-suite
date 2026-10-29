@@ -1,5 +1,5 @@
 ---
-title: 论文助手 四合一
+title: 论文助手 七板块
 emoji: 📄
 colorFrom: indigo
 colorTo: blue
@@ -7,18 +7,34 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: 题目生成 / 资料获取 / 写作 / 评估，访客自带 API Key
+short_description: 定题目 / 参考文献与知识库 / 生成开题报告 / 写初稿 / 修改与评估 / 查重与降 AIGC 率 / 答辩
 ---
 
-# 论文助手 · 四合一站点
+# 论文助手 · 七板块连续工作流
 
-把四个论文助手整合成一个公网可访问的网站：**题目生成 → 资料获取 → 写作 → 评估**。
+把论文写作的七个环节做成一个可以一路走到底的网站：
+
+**定题目 → 参考文献与知识库 → 生成开题报告 → 写初稿 → 修改与评估 → 查重与降 AIGC 率 → 答辩**
+
+不是七个互不相干的工具页，而是**一条流水线**：每一步的产出是下一步的输入，
+证据、稿件、评估结果在同一个会话里流转。
 
 > **想看"有哪些智能体"？** → [agents/](agents/README.md)
-> 本机 **19 个写作智能体**的完整索引（13 个能力层 + 6 个板块层）、
-> 六板块流水线为什么这么排、以及本机其它 7 个写作项目的说明文档。
-> 那份索引还标注了**版本谱系**——本仓库是 Python 六板块版，更新一代的
-> "研序"七阶段版在 `codex/writing-workspace`，不在本仓库内。
+> 本机 **19 个写作智能体**的完整索引（13 个能力层 + 6 个板块层智能体）、
+> 七板块流水线为什么这么排、以及本机其它 8 个写作项目的说明文档。
+> 那份索引还标注了**版本谱系**——本仓库是 Python 七板块版，另有更新一代的
+> "研序"（`modern/` Node 实现）在 `E:\AI\codex\writing-workspace`，不在本仓库内。
+
+## 一句话说清它凭什么值得用
+
+三件事是它和"套壳的 AI 写作工具"的区别：
+
+1. **引用不允许现编**。写稿时引用角标只能用证据池里真实存在的编号，
+   写不出依据的地方会标出来，而不是拿模型知识顶上（见第四节）。
+2. **有 53 个本地检查器**，纯函数、不联网、不调模型——**访客不填 Key 也能跑出真实结果**。
+   评分由问题数量与严重度机械推导，不是模型打的印象分（见第五节）。
+3. **凡查不出来的，就说查不出来**。查重只做文档内部重复 + 参考文献可核验性；
+   AI 味指数是本地风格启发式代理、不是商用检测器输出，数值不可互相换算（见第十一节）。
 
 访客**自带 API Key**（下称 BYOK，Bring Your Own Key）：密钥只存在访客浏览器里，
 随每次请求经请求头转发给模型服务商。服务器不保存、不缓存、不回退使用站主的密钥，
@@ -26,17 +42,55 @@ short_description: 题目生成 / 资料获取 / 写作 / 评估，访客自带 
 
 ---
 
-## 一、四个助手分别来自哪里
+## 一、七个板块与六个智能体
 
-| # | 助手 | 实现来源 | 是否需要 Key |
+### 七个板块
+
+"板块"是给使用者看的组织方式，"智能体"是干活的对象，两者不是一一对应：
+一个板块会调用多个 agent 动作，一个 agent 也可能服务多个板块。
+
+| # | 板块 | 做什么 | 需要 Key |
 |---|---|---|---|
-| ① | 题目生成 | `thesis-topic-helper` 的 `core/` 整包 | 否（可离线） |
-| ② | 资料获取 | `thesis-agents` 的文档解析 + 外部核验 | 抽取需要；核验不需要 |
-| ③ | 写作 | 新增的「只依据证据」写作链路 | 是 |
-| ④ | 评估 | `thesis-agents` 的 53 个检查器 + 审稿意见书 | 检查不需要；意见书需要 |
+| 1 | 定题目 | 出题（可离线）+ 建可检索的本地知识库 | 否 |
+| 2 | 参考文献与知识库 | 推荐文献、导入资料、RAG 检索、读文献 | 抽取需要 |
+| 3 | 生成开题报告 | 据知识库逐节成稿，参考文献机器汇总 | 是 |
+| 4 | 写初稿 | 依据三层来源逐章生成，数字与引用逐条校验 | 是 |
+| 5 | 修改与评估 | 53 个本地检查器 + 文献核验 + 审稿意见书 + 按意见改写 | 检查不需要 |
+| 6 | 查重与降 AIGC 率 | 内部重复自查 + 参考文献可核验性 + AI 味体检 | 否 |
+| 7 | 答辩 | 答辩稿（陈述 + 预计提问）+ 演示幻灯片 | 是 |
+
+板块 2 与 3 原先是一个"开题报告"板块，后来拆开了：**找材料和写报告是两件不同的事**，
+混在一个面板里会让人在一堆控件前不知道该先点哪个。
+
+### 六个智能体
+
+每个都可单独寻址、共享会话状态、每次动作写事件流：
+
+| 智能体 | 动作数 | 标签 |
+|---|---|---|
+| `topic` 题目生成 | 2 | 出题 / 生成大纲 |
+| `gather` 资料获取 | 4 | 导入 / 抽取 / 核验 / 导出 |
+| `writer` 论文写作 | 6 | 导入出初稿 / 起草 / 单章重写 / 改写 / 导出 |
+| `review` 评估 | 5 | 检查 / 核验 / 意见书 / 查重 / 模板 |
+| `integrity` 查重与降 AIGC | 4 | 自查 / 体检 / 改写 / 导出 |
+| `defense` 答辩 | 4 | 答辩稿 / 幻灯片 / pptx / html |
+
+合计 **25 个动作**。`GET /api/agents` 列出全部，`POST /api/agents/{name}/{action}` 单独驱动。
+
+### 各板块的实现来源
+
+| 板块 | 实现来源 |
+|---|---|
+| 1 定题目 | `thesis-topic-helper` 的 `core/` 整包 + 本地 RAG（`suite/rag.py`） |
+| 2 参考文献与知识库 | `thesis-agents` 的解析与核验 + `suite/references.py` 推荐 + `suite/paperqa.py` |
+| 3 生成开题报告 | 新增的「据库成稿」链路 |
+| 4 写初稿 | 新增的「只依据证据」写作链路 |
+| 5 修改与评估 | `thesis-agents` 的 53 个检查器 + 审稿意见书 |
+| 6 查重与降 AIGC 率 | `suite/capabilities.py` + 本地 `aigc-reducer` 服务 |
+| 7 答辩 | `suite/defense.py`（新版自带 python-pptx 时出 .pptx，否则出单文件 HTML） |
 
 上游两套代码**一行都没有改**，以原样隔离在 `vendor/` 下（见第二节）。
-本站自己的代码只有 `suite/` 目录，约 2000 行。
+本站自己的代码只有 `suite/` 与 `web/` 两个目录。
 
 ---
 
@@ -617,7 +671,7 @@ DOCX 表格未丢、Markdown 链接处理、GBK 正确解码、HTML 剥脚本、
 
 
 
-评估能力是四个助手里**唯一完全不依赖模型就有价值**的：53 个检查器全部
+评估板块是七个板块里**唯一完全不依赖模型就有价值**的：53 个检查器全部
 `needs_llm=False`、不联网、不花钱。但接入它踩了两个静默失效的坑：
 
 
@@ -662,7 +716,7 @@ DOCX 表格未丢、Markdown 链接处理、GBK 正确解码、HTML 剥脚本、
 站点最初是**四个并列页签**（题目生成 / 资料获取 / 写作 / 评估）。这有个真实问题：
 它把一件事拆成了四个工具，用户看不出"下一步该做什么"，做完一步会停在原地。
 
-现在改成**连续工作流**：左侧五个阶段，右侧是当前阶段的工作台，数据跨阶段留着。
+现在改成**连续工作流**：左侧七个板块，右侧是当前板块的工作台，数据跨板块留着。
 
 | 阶段 | 做什么 | 对应能力 |
 |---|---|---|
@@ -722,7 +776,7 @@ DOCX 表格未丢、Markdown 链接处理、GBK 正确解码、HTML 剥脚本、
 
 ### 阶段按钮：HTML 与 JS 的关系
 
-五个阶段按钮在 `index.html` 里**静态写了一份**，`app.js` 的 `buildStages()` 会优先
+板块按钮在 `index.html` 里**静态写了一份**，`app.js` 的 `buildStages()` 会优先
 复用它们（找不到才自行渲染）。静态那份是**boot 之前的骨架**，目的是让首屏侧栏
 立刻可点、不出现空白。
 
@@ -933,22 +987,42 @@ python tools\check_encodings.py
 
 ## 七、测试
 
+`tools/` 下共 **30 个脚本**：24 个 `smoke_*.py`（各功能链路的冒烟）+
+6 个 `check_*.py`（静态与运行时体检）。**最近一次全量回归 30/30 通过**，
+前提是两个外部服务在运行：本站自身（`127.0.0.1:8878`）与降 AIGC 服务（`127.0.0.1:8770`）
+——`check_running.py` 的用途就是"对运行中的站点做只读验收"，服务没起时它本就该失败。
+
+一次跑完：
+
 ```powershell
 $env:PYTHONPATH = "E:\AI\thesis-suite;E:\AI\aigc-reducer\libs;E:\AI\thesis-assistant\libs"
 $env:PYTHONUTF8 = "1"
 
-python tools\smoke_suite.py         # 端到端：装配 / 离线出题 / 闸门 / 检查器 / 会话 / 前端
-python tools\smoke_writing_import.py # 新增：Word/PDF 导入出初稿 + 单章重写（53 项，假模型，不花钱）
-python tools\smoke_frontend.py      # 前端资产与写作接口字段
-python tools\smoke_gather.py        # 资料获取：50 项断言（含真实 Crossref 核验）
-python tools\smoke_references.py    # 参考文献推荐：分级不误判 / 配比生效 / 导出条数与字段（不花钱）
-python tools\smoke_paperqa.py       # PaperQA2 链路：物化、凭据隔离、边界（离线，不花钱）
-python tools\smoke_paperqa.py --live --key-file E:\AI\thesis-assistant\.env   # 真建索引并提问（会花钱）
-python tools\smoke_byok.py          # BYOK 防线：服务器密钥不可被借用（含 AST 静态校验）
-python tools\smoke_container.py     # 容器形态：干净环境 + suite/vendor 同级摆放
-python tools\check_requirements.py  # 依赖对账：requirements.txt 是否覆盖源码的真实 import
-python tools\live_chain.py          # 真实模型跑完整链路（会花钱），密钥从既有项目 .env 读
-python tools\live_writing_import.py # 真实模型跑"导入 Word → 初稿 → 单章重写"（会花钱，规模很小）
+Get-ChildItem tools -Filter *.py | Where-Object { $_.Name -match '^(smoke_|check_)' } |
+  ForEach-Object { python $_.FullName; "$($_.Name) exit=$LASTEXITCODE" }
+```
+
+几个值得单列的：
+
+```powershell
+python tools\smoke_suite.py          # 装配 / 离线出题 / 闸门 / 检查器 / 会话
+python tools\smoke_writing_import.py # Word/PDF 导入出初稿 + 单章重写（假模型，不花钱）
+python tools\smoke_frontend.py       # 前端资产与写作接口字段
+python tools\smoke_gather.py         # 资料获取 50 项（含真实 Crossref 核验）
+python tools\smoke_references.py     # 参考文献推荐：分级不误判 / 配比生效 / 导出
+python tools\smoke_paperqa.py        # PaperQA2（离线，不花钱）
+python tools\smoke_byok.py           # BYOK 防线：服务器密钥不可被借用（含 AST 静态校验）
+python tools\smoke_container.py      # 容器形态：干净环境 + suite/vendor 同级摆放
+python tools\check_requirements.py   # 依赖对账：requirements.txt 是否覆盖真实 import
+python tools\check_dom_refs.py       # 前端悬空引用体检（漏了会让页面初始化抛异常）
+```
+
+会花钱的（真实模型，默认不跑）：
+
+```powershell
+python tools\smoke_paperqa.py --live --key-file E:\AI\thesis-assistant\.env
+python tools\live_chain.py
+python tools\live_writing_import.py
 ```
 
 `smoke_references.py` 里有几条断言值得单独说，因为它们对应的都是**实际踩过的坑**：
@@ -1134,7 +1208,7 @@ thesis-suite/
 ├── agents/                     智能体索引与文档（本机 19 个写作智能体的清单）
 │   ├── README.md               盘点结论 + 版本谱系 + 第三方项目边界
 │   ├── AGENTS.md               19 个智能体的职责与纪律边界
-│   ├── PIPELINE.md             六板块流水线为什么这么排
+│   ├── PIPELINE.md             七板块流水线为什么这么排
 │   └── projects/               本机其它写作项目的说明文档（原样转载）
 ├── tools/                      冒烟与真实链路测试
 │   ├── smoke_suite.py          端到端
